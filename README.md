@@ -80,3 +80,4 @@ Funcionalidades:
 - busca e exportação CSV.
 
 Não é necessário executar um novo SQL se a migração `001_initial_schema.sql` já foi aplicada.
+
