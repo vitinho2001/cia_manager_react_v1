@@ -125,7 +125,10 @@ export function MenuPage() {
 
   function componentCost(component: MenuItemComponent | ComponentDraft) {
     const type = 'component_type' in component ? component.component_type : component.type
-    const quantity = 'quantity' in component && typeof component.quantity === 'number' ? component.quantity : parseNumber(component.quantity)
+    const quantity =
+  typeof component.quantity === 'number'
+    ? component.quantity
+    : parseNumber(component.quantity)
     if (!(quantity > 0)) return { cost: null, incomplete: true }
     if (type === 'recipe') {
       const recipeId = 'recipe_id' in component ? component.recipe_id : component.targetId
@@ -136,7 +139,7 @@ export function MenuPage() {
     const ingredientId = 'ingredient_id' in component ? component.ingredient_id : component.targetId
     const ingredient = ingredientId ? ingredientMap.get(ingredientId) : null
     if (!ingredient) return { cost: null, incomplete: true }
-    const unit = ('unit' in component ? component.unit : component.unit) || ingredient.purchase_unit
+    const unit = component.unit || ingredient.purchase_unit
     const converted = convertQuantity(quantity, unit, ingredient.purchase_unit)
     const average = averageByIngredient.get(ingredient.id) ?? null
     return converted == null || average == null ? { cost: null, incomplete: true } : { cost: converted * average, incomplete: false }
