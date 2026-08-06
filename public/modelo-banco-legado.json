@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "description": "Banco inicial da Cia. do Caldinho. Abra pelo sistema para começar."
+  },
+  "menu": [],
+  "ingredients": [],
+  "recipes": [],
+  "costs": [],
+  "sales": [],
+  "finance": {},
+  "settings": {
+    "targetMargin": 20,
+    "plannedUnits": 1000,
+    "ifoodFee": 23,
+    "bysellFee": 12
+  }
+}

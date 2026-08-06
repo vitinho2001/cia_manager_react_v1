@@ -1,0 +1,15 @@
+VERSÃO 5 — CARDÁPIO CONECTADO AO SUPABASE
+
+1. Copie o arquivo .env.local da versão anterior para esta pasta.
+2. Execute npm install e npm run dev.
+3. Abra Cardápio.
+4. Se a lista estiver vazia, clique em "Carregar cardápio padrão".
+5. Clique em um item para vincular receitas e/ou insumos diretos.
+
+Não é necessário executar SQL novo: as tabelas menu_items e menu_item_components já fazem parte da migração inicial.
+
+Teste sugerido:
+- Crie uma receita "Arroz" com custo calculado.
+- Abra "Jantinha 1".
+- Adicione 1 porção da receita Arroz e 1 insumo direto.
+- Salve, atualize a página e confirme que a composição continua gravada.

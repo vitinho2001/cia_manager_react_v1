@@ -1,0 +1,11 @@
+CIA DO CALDINHO — V4 RECEITAS
+
+1. Copie o arquivo .env.local da versão anterior para esta pasta.
+2. Execute npm install e npm run dev.
+3. Não é necessário executar novo SQL: as tabelas recipes e recipe_items já fazem parte da migração inicial.
+
+Teste recomendado:
+- Tenha um insumo comprado em kg e com compra no mês selecionado.
+- Crie uma receita usando esse insumo em g.
+- Confirme o custo total e o custo por porção.
+- Teste também um insumo comprado em pacote e informe a equivalência manual na receita.
