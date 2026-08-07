@@ -7,7 +7,15 @@ import { addPurchase, createIngredientWithPurchase, deleteIngredient, deletePurc
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
 
 const units = ['kg', 'g', 'mg', 'L', 'ml', 'un', 'caixa', 'pacote', 'saco', 'fardo', 'garrafa', 'lata', 'maço']
-const categories = ['Hortifruti', 'Carnes e embutidos', 'Laticínios', 'Mercearia', 'Bebidas', 'Congelados', 'Embalagens', 'Limpeza', 'Outros']
+const categories = ['Alimentos', 'Bebidas', 'Embalagens', 'Limpeza', 'Outros']
+const categoryFilters = ['Todos', ...categories]
+const legacyFoodCategories = new Set(['Hortifruti', 'Carnes e embutidos', 'Laticínios', 'Mercearia', 'Congelados'])
+
+function categoryGroup(category: string | null) {
+  if (!category) return 'Outros'
+  if (legacyFoodCategories.has(category)) return 'Alimentos'
+  return categories.includes(category) ? category : 'Outros'
+}
 
 type ModalMode = 'new' | 'purchase' | 'history' | 'edit-purchase' | null
 
@@ -77,7 +85,7 @@ function weightedAverage(ingredient: Ingredient, purchases: IngredientPurchase[]
 }
 
 const emptyIngredientForm: IngredientForm = {
-  name: '', category: 'Outros', purchaseDate: today, quantity: '', purchaseUnit: 'kg', totalAmount: '', supplier: '',
+  name: '', category: 'Alimentos', purchaseDate: today, quantity: '', purchaseUnit: 'kg', totalAmount: '', supplier: '',
 }
 
 export function IngredientsPage() {
@@ -86,6 +94,7 @@ export function IngredientsPage() {
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
   const [month, setMonth] = useState(currentMonth)
   const [search, setSearch] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('Todos')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -125,8 +134,13 @@ export function IngredientsPage() {
 
   const filteredIngredients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('pt-BR')
-    return query ? ingredients.filter((ingredient) => `${ingredient.name} ${ingredient.category ?? ''}`.toLocaleLowerCase('pt-BR').includes(query)) : ingredients
-  }, [ingredients, search])
+    return ingredients.filter((ingredient) => {
+      const group = categoryGroup(ingredient.category)
+      const matchesCategory = categoryFilter === 'Todos' || group === categoryFilter
+      const matchesSearch = !query || `${ingredient.name} ${ingredient.category ?? ''} ${group}`.toLocaleLowerCase('pt-BR').includes(query)
+      return matchesCategory && matchesSearch
+    })
+  }, [ingredients, search, categoryFilter])
 
   function closeModal() {
     setModal(null); setSelectedIngredient(null); setSelectedPurchase(null); setError(null)
@@ -241,7 +255,7 @@ export function IngredientsPage() {
     <section className="panel">
       <div className="table-toolbar">
         <div className="search-box table-search"><Search size={17}/><input value={search} onChange={(event)=>setSearch(event.target.value)} placeholder="Buscar por insumo ou categoria"/></div>
-        <Button variant="ghost" icon={<RefreshCw size={16}/>} onClick={()=>void load()} disabled={loading}>Atualizar</Button>
+        <div className="row-actions"><select className="select-control" value={categoryFilter} onChange={(event)=>setCategoryFilter(event.target.value)} aria-label="Filtrar categoria">{categoryFilters.map((item)=><option key={item} value={item}>{item}</option>)}</select><Button variant="ghost" icon={<RefreshCw size={16}/>} onClick={()=>void load()} disabled={loading}>Atualizar</Button></div>
       </div>
       <div className="table-wrap">
         <table>
@@ -254,7 +268,7 @@ export function IngredientsPage() {
               const stats = weightedAverage(ingredient, itemPurchases)
               return <tr key={ingredient.id}>
                 <td><strong>{ingredient.name}</strong>{stats.incompatible > 0 && <small className="row-warning">{stats.incompatible} compra(s) com unidade incompatível</small>}</td>
-                <td>{ingredient.category || 'Outros'}</td>
+                <td><strong>{categoryGroup(ingredient.category)}</strong>{ingredient.category && ingredient.category !== categoryGroup(ingredient.category) && <small className="row-warning">{ingredient.category}</small>}</td>
                 <td><span className="unit-pill">{ingredient.purchase_unit}</span></td>
                 <td>{itemPurchases.length}</td>
                 <td>{stats.average === null ? '—' : <strong>{money(stats.average)} / {ingredient.purchase_unit}</strong>}</td>

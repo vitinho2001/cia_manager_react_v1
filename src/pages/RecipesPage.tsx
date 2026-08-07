@@ -1,4 +1,4 @@
-import { AlertTriangle, CalendarDays, ChefHat, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ChefHat, Download, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
@@ -81,6 +81,26 @@ function itemCost(item: Pick<ItemDraft, 'quantity' | 'recipeUnit' | 'manualConve
 
 function newItem(ingredientId = '', unit = 'g'): ItemDraft {
   return { key: crypto.randomUUID(), ingredientId, quantity: '', recipeUnit: unit, manualConversionQuantity: '', manualConversionUnit: unit }
+}
+
+
+function csvCell(value: string | number | null | undefined) {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`
+}
+
+function downloadCsv(filename: string, rows: Array<Array<string | number | null | undefined>>) {
+  const csv = rows.map((row) => row.map(csvCell).join(';')).join('\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function safeFilename(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase()
 }
 
 export function RecipesPage() {
@@ -232,8 +252,56 @@ export function RecipesPage() {
     catch (err) { setError(err instanceof Error ? err.message : 'Não foi possível excluir a receita.') }
   }
 
+
+  function recipeExportRows(recipe: Recipe) {
+    const cost = recipeCost(recipe)
+    const items = itemsByRecipe.get(recipe.id) ?? []
+    const base = [
+      recipe.name,
+      recipe.yield_quantity,
+      recipe.yield_unit,
+      cost.total.toFixed(2).replace('.', ','),
+      cost.perYield.toFixed(2).replace('.', ','),
+      cost.incomplete,
+    ]
+    if (!items.length) return [[...base, '', '', '', '', '', '', '', '']]
+    return items.map((item) => {
+      const ingredient = ingredientMap.get(item.ingredient_id)
+      const average = ingredient ? averages.get(ingredient.id) ?? null : null
+      const componentCost = storedItemCost(item)
+      const conversion = ingredient
+        ? (convertQuantity(item.quantity, item.recipe_unit, ingredient.purchase_unit) != null
+          ? 'automática'
+          : item.manual_conversion_quantity != null
+            ? `1 ${ingredient.purchase_unit} = ${item.manual_conversion_quantity} ${item.manual_conversion_unit ?? item.recipe_unit}`
+            : 'pendente')
+        : 'insumo não encontrado'
+      return [
+        ...base,
+        ingredient?.name ?? '',
+        ingredient?.category ?? '',
+        item.quantity,
+        item.recipe_unit,
+        ingredient?.purchase_unit ?? '',
+        average == null ? '' : average.toFixed(4).replace('.', ','),
+        componentCost == null ? '' : componentCost.toFixed(2).replace('.', ','),
+        conversion,
+      ]
+    })
+  }
+
+  function exportRecipe(recipe: Recipe) {
+    const header = [['receita','rendimento','unidade_rendimento','custo_total','custo_por_rendimento','componentes_sem_custo','insumo','categoria_insumo','quantidade','unidade_receita','unidade_compra','preco_medio_mes','custo_componente','conversao']]
+    downloadCsv(`receita-${safeFilename(recipe.name)}-${month}.csv`, [...header, ...recipeExportRows(recipe)])
+  }
+
+  function exportAllRecipes() {
+    const header = [['receita','rendimento','unidade_rendimento','custo_total','custo_por_rendimento','componentes_sem_custo','insumo','categoria_insumo','quantidade','unidade_receita','unidade_compra','preco_medio_mes','custo_componente','conversao']]
+    downloadCsv(`receitas-completas-${month}.csv`, [...header, ...recipes.flatMap(recipeExportRows)])
+  }
+
   return <div className="page-container">
-    <PageHeader eyebrow="Engenharia de custos" title="Receitas" description="Monte preparos reutilizáveis e acompanhe o custo por rendimento em cada mês." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(e)=>setMonth(e.target.value)}/></label><Button onClick={openNew} icon={<Plus size={17}/>}>Nova receita</Button></>} />
+    <PageHeader eyebrow="Engenharia de custos" title="Receitas" description="Monte preparos reutilizáveis e acompanhe o custo por rendimento em cada mês." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(e)=>setMonth(e.target.value)}/></label><Button variant="secondary" onClick={exportAllRecipes} icon={<Download size={16}/>}>Exportar receitas</Button><Button onClick={openNew} icon={<Plus size={17}/>}>Nova receita</Button></>} />
     {success && <div className="notice notice-success">{success}<button onClick={()=>setSuccess(null)}><X size={16}/></button></div>}
     {error && !modalOpen && <div className="notice notice-error">{error}<button onClick={()=>setError(null)}><X size={16}/></button></div>}
 
@@ -246,7 +314,7 @@ export function RecipesPage() {
 
     <section className="panel">
       <div className="table-toolbar"><div className="search-box table-search"><Search size={17}/><input placeholder="Buscar receita..." value={search} onChange={(e)=>setSearch(e.target.value)}/></div><Button variant="secondary" onClick={()=>void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button></div>
-      {loading ? <div className="table-message">Carregando receitas…</div> : !filteredRecipes.length ? <div className="empty-state compact"><ChefHat size={38}/><h2>Nenhuma receita cadastrada</h2><p>Crie a primeira receita e vincule os ingredientes existentes na aba Insumos.</p><Button onClick={openNew} icon={<Plus size={16}/>}>Nova receita</Button></div> : <div className="recipe-grid">{filteredRecipes.map((recipe)=>{const cost=recipeCost(recipe); const count=itemsByRecipe.get(recipe.id)?.length??0; return <article className="recipe-card" key={recipe.id} onClick={()=>openEdit(recipe)}><div className="recipe-card-top"><div className="recipe-card-icon"><ChefHat size={20}/></div><div className="row-actions"><button className="icon-action" onClick={(e)=>{e.stopPropagation();openEdit(recipe)}} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e)=>{e.stopPropagation();void remove(recipe)}} title="Excluir"><Trash2 size={15}/></button></div></div><h3>{recipe.name}</h3><p>{count} ingrediente{count===1?'':'s'} · rende {recipe.yield_quantity.toLocaleString('pt-BR')} {recipe.yield_unit}</p><div className="recipe-cost-row"><span>Custo do preparo<strong>{money(cost.total)}</strong></span><span>Custo por {recipe.yield_unit.replace(/s$/,'')}<strong>{money(cost.perYield)}</strong></span></div>{cost.incomplete>0 && <div className="recipe-warning"><AlertTriangle size={14}/>{cost.incomplete} ingrediente(s) sem custo calculável</div>}</article>})}</div>}
+      {loading ? <div className="table-message">Carregando receitas…</div> : !filteredRecipes.length ? <div className="empty-state compact"><ChefHat size={38}/><h2>Nenhuma receita cadastrada</h2><p>Crie a primeira receita e vincule os ingredientes existentes na aba Insumos.</p><Button onClick={openNew} icon={<Plus size={16}/>}>Nova receita</Button></div> : <div className="recipe-grid">{filteredRecipes.map((recipe)=>{const cost=recipeCost(recipe); const count=itemsByRecipe.get(recipe.id)?.length??0; return <article className="recipe-card" key={recipe.id} onClick={()=>openEdit(recipe)}><div className="recipe-card-top"><div className="recipe-card-icon"><ChefHat size={20}/></div><div className="row-actions"><button className="icon-action" onClick={(e)=>{e.stopPropagation();exportRecipe(recipe)}} title="Exportar receita"><Download size={15}/></button><button className="icon-action" onClick={(e)=>{e.stopPropagation();openEdit(recipe)}} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e)=>{e.stopPropagation();void remove(recipe)}} title="Excluir"><Trash2 size={15}/></button></div></div><h3>{recipe.name}</h3><p>{count} ingrediente{count===1?'':'s'} · rende {recipe.yield_quantity.toLocaleString('pt-BR')} {recipe.yield_unit}</p><div className="recipe-cost-row"><span>Custo do preparo<strong>{money(cost.total)}</strong></span><span>Custo por {recipe.yield_unit.replace(/s$/,'')}<strong>{money(cost.perYield)}</strong></span></div>{cost.incomplete>0 && <div className="recipe-warning"><AlertTriangle size={14}/>{cost.incomplete} ingrediente(s) sem custo calculável</div>}</article>})}</div>}
     </section>
 
     {modalOpen && <div className="modal-backdrop" onMouseDown={(e)=>{if(e.target===e.currentTarget)setModalOpen(false)}}><form className="modal-card modal-wide recipe-modal" onSubmit={submit}><button className="modal-close" type="button" onClick={()=>setModalOpen(false)}><X size={18}/></button><h2>{editingRecipe?'Editar receita':'Nova receita'}</h2><p className="modal-description">A unidade de compra vem dos Insumos. Aqui você informa a quantidade e a unidade usada no preparo.</p>{error && <div className="notice notice-error">{error}<button type="button" onClick={()=>setError(null)}><X size={16}/></button></div>}
