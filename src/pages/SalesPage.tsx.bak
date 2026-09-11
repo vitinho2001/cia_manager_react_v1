@@ -162,16 +162,6 @@ export function SalesPage() {
   const [editItemId, setEditItemId] = useState('')
   const [editQuery, setEditQuery] = useState('')
   const [editSaving, setEditSaving] = useState(false)
-  const [editChannel, setEditChannel] = useState<SaleChannel>('counter')
-  const [editQty, setEditQty] = useState('1')
-  const [editTotal, setEditTotal] = useState('')
-  useEffect(() => {
-    if (editingSale) {
-      setEditChannel(editingSale.channel)
-      setEditQty(String(editingSale.quantity))
-      setEditTotal(String(editingSale.total_amount ?? 0))
-    }
-  }, [editingSale])
   const load = useCallback(async () => {
     if (!organizationId) return
     setLoading(true)
@@ -405,7 +395,7 @@ export function SalesPage() {
     setEditSaving(true)
     setError(null)
     try {
-      await updateSale(editingSale.id, { menu_item_id: editItemId, channel: editChannel, quantity: parseFloat(editQty) || 1, total_amount: parseFloat(editTotal) || 0 })
+      await updateSale(editingSale.id, { menu_item_id: editItemId })
       setResultMsg('Associacao atualizada.')
       setEditingSale(null)
       await load()
@@ -520,7 +510,7 @@ export function SalesPage() {
                   </td>
                   <td>{channelLabel(s.channel)}</td>
                   <td>{s.quantity}</td>
-                  <td>{brl(Number(s.total_amount) || 0)}<small style={{ display: 'block', fontSize: 11, color: '#6b7280' }}>{brl((Number(s.total_amount) || 0) / (Number(s.quantity) || 1))} /un</small></td>
+                  <td>{brl(Number(s.total_amount) || 0)}</td>
                   <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -688,28 +678,12 @@ export function SalesPage() {
               value={editQuery}
               onChange={(e) => setEditQuery(e.target.value)}
             />
-            <label>Item do cardapio
-              <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
-                <option value="">Sem associacao</option>
-                {filteredEditMenu.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>Canal
-              <select className="select-control" value={editChannel} onChange={(e) => setEditChannel(e.target.value as SaleChannel)}>
-                <option value="counter">Balcao</option>
-                <option value="ifood">iFood</option>
-                <option value="bysell">BySell</option>
-                <option value="other">Outro</option>
-              </select>
-            </label>
-            <label>Quantidade
-              <input type="number" min="0" step="any" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
-            </label>
-            <label>Total (R$)
-              <input type="number" min="0" step="any" value={editTotal} onChange={(e) => setEditTotal(e.target.value)} />
-            </label>
+            <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
+              <option value="">Sem associacao</option>
+              {filteredEditMenu.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
             <div className="modal-footer">
               <Button onClick={() => setEditingSale(null)} disabled={editSaving}>Cancelar</Button>
               <Button onClick={() => void saveEdit()} disabled={editSaving || !editItemId}>

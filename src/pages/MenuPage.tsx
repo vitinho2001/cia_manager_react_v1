@@ -18,9 +18,9 @@ const currentMonth = today.slice(0, 7)
 const directUnits = ['mg', 'g', 'kg', 'ml', 'L', 'un', 'pacote', 'caixa', 'lata', 'garrafa', 'fatia', 'porção']
 
 type ComponentDraft = { key: string; type: MenuComponentType; targetId: string; quantity: string; unit: string }
-type Draft = { name: string; category: string; counterPrice: string; ifoodPrice: string; bysellPrice: string; components: ComponentDraft[] }
+type Draft = { name: string; category: string; counterPrice: string; ifoodPrice: string; bysellPrice: string; targetMargin: string; components: ComponentDraft[] }
 
-const emptyDraft: Draft = { name: '', category: '', counterPrice: '', ifoodPrice: '', bysellPrice: '', components: [] }
+const emptyDraft: Draft = { name: '', category: '', counterPrice: '', ifoodPrice: '', bysellPrice: '', targetMargin: '', components: [] }
 
 function pctInput(value: number) {
   return String(Math.round((value || 0) * 10000) / 100)
@@ -101,7 +101,6 @@ const [settings, setSettings] = useState<BusinessSettings | null>(null)
 const [feeCounter, setFeeCounter] = useState('0')
 const [feeIfood, setFeeIfood] = useState('0')
 const [feeBysell, setFeeBysell] = useState('0')
-const [margin, setMargin] = useState('20')
 const [savingSettings, setSavingSettings] = useState(false)
 const [notice, setNotice] = useState<string | null>(null)
 
@@ -120,7 +119,6 @@ setSettings(settingsData)
 setFeeCounter(pctInput(settingsData.counter_fee))
 setFeeIfood(pctInput(settingsData.ifood_fee))
 setFeeBysell(pctInput(settingsData.bysell_fee))
-setMargin(pctInput(settingsData.target_net_margin))
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o cardápio.') }
     finally { setLoading(false) }
   }
@@ -188,7 +186,7 @@ setMargin(pctInput(settingsData.target_net_margin))
     setEditing(item)
     setDraft({
       name: item.name, category: item.category,
-      counterPrice: item.counter_price?.toString().replace('.', ',') ?? '', ifoodPrice: item.ifood_price?.toString().replace('.', ',') ?? '', bysellPrice: item.bysell_price?.toString().replace('.', ',') ?? '',
+      counterPrice: item.counter_price?.toString().replace('.', ',') ?? '', ifoodPrice: item.ifood_price?.toString().replace('.', ',') ?? '', bysellPrice: item.bysell_price?.toString().replace('.', ',') ?? '', targetMargin: item.target_margin != null ? String(Math.round(item.target_margin * 10000) / 100) : '',
       components: (componentsByItem.get(item.id) ?? []).map((row) => ({ key: row.id, type: row.component_type, targetId: row.recipe_id ?? row.ingredient_id ?? '', quantity: row.quantity.toString().replace('.', ','), unit: row.unit ?? 'un' })),
     })
     setModalOpen(true); setError(null)
@@ -205,7 +203,7 @@ setMargin(pctInput(settingsData.target_net_margin))
     if (serialized.some((row) => !row.recipe_id && !row.ingredient_id || !(row.quantity > 0))) { setError('Revise os componentes e as quantidades.'); return }
     setSaving(true)
     try {
-      const payload = { organizationId, name: draft.name, category: draft.category, counterPrice: parseOptionalMoney(draft.counterPrice), ifoodPrice: parseOptionalMoney(draft.ifoodPrice), bysellPrice: parseOptionalMoney(draft.bysellPrice), components: serialized }
+      const payload = { organizationId, name: draft.name, category: draft.category, counterPrice: parseOptionalMoney(draft.counterPrice), ifoodPrice: parseOptionalMoney(draft.ifoodPrice), bysellPrice: parseOptionalMoney(draft.bysellPrice), targetMargin: parsePct(draft.targetMargin), components: serialized }
       if (editing) await updateMenuItem({ id: editing.id, ...payload }); else await createMenuItem(payload)
       setModalOpen(false); await load()
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o item.') }
@@ -229,30 +227,38 @@ setMargin(pctInput(settingsData.target_net_margin))
     return { total, incomplete }
   }, [draft.components, recipeCostById, ingredientMap, averageByIngredient])
 
-    const fees = useMemo(() => ({
+      const fees = useMemo(() => ({
     counter: settings?.counter_fee ?? 0,
     bysell: settings?.bysell_fee ?? 0,
     ifood: settings?.ifood_fee ?? 0,
-    margin: settings?.target_net_margin ?? 0.2,
   }), [settings])
 
-  function suggestFromCost(cost: number) {
+  function itemMarginPct() {
+    const parsed = parsePct(draft.targetMargin)
+    return parsed > 0 ? parsed : 0.2
+  }
+
+  function suggestedFor(fee: number) {
+    const m = itemMarginPct()
+    const denom = 1 - fee - m
+    return draftCost.total > 0 && denom > 0 ? draftCost.total / denom : null
+  }
+
+  function suggestFromCost(cost: number, margin: number) {
     const make = (fee: number) => {
-      const denom = 1 - fee - fees.margin
+      const denom = 1 - fee - margin
       if (!(cost > 0) || !(denom > 0)) return null
       return cost / denom
     }
     return { counter: make(fees.counter), bysell: make(fees.bysell), ifood: make(fees.ifood) }
   }
 
-  function channelPreview(cost: number, fee: number) {
-    if (!(cost > 0)) return null
-    const denom = 1 - fee - fees.margin
-    if (!(denom > 0)) return null
-    const suggested = cost / denom
-    const net = suggested * (1 - fee)
+  function channelPreview(price: number | null, fee: number, cost: number | null) {
+    if (price == null || !(price > 0) || cost == null || !(cost > 0)) return null
+    const net = price * (1 - fee)
+    if (!(net > 0)) return null
     const profit = net - cost
-    return { suggested, net, profit, pct: net > 0 ? profit / net : null }
+    return { net, profit, pct: profit / net }
   }
 
   async function saveSettings() {
@@ -264,13 +270,11 @@ setMargin(pctInput(settingsData.target_net_margin))
         counter_fee: parsePct(feeCounter),
         bysell_fee: parsePct(feeBysell),
         ifood_fee: parsePct(feeIfood),
-        target_net_margin: parsePct(margin),
       })
       setSettings(next)
       setFeeCounter(pctInput(next.counter_fee))
       setFeeIfood(pctInput(next.ifood_fee))
       setFeeBysell(pctInput(next.bysell_fee))
-      setMargin(pctInput(next.target_net_margin))
       setNotice('Taxas salvas.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao salvar taxas.')
@@ -283,29 +287,38 @@ return <div className="page-stack">
     <PageHeader eyebrow="Engenharia de cardápio" title="Cardápio" description="Vincule cada produto a receitas e/ou insumos diretos e acompanhe o custo unitário por mês." actions={<Button onClick={openNew} icon={<Plus size={17}/>}>Novo item</Button>} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontWeight: 600, fontSize: 15 }}>Taxas dos canais e margem alvo</div>
+        <div style={{ fontWeight: 600, fontSize: 15 }}>Taxas dos canais</div>
         <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>Balcao (%)<input inputMode="decimal" value={feeCounter} onChange={(e) => setFeeCounter(e.target.value)} /></label>
         <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>BySell (%)<input inputMode="decimal" value={feeBysell} onChange={(e) => setFeeBysell(e.target.value)} /></label>
         <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>iFood (%)<input inputMode="decimal" value={feeIfood} onChange={(e) => setFeeIfood(e.target.value)} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>Margem alvo (%)<input inputMode="decimal" value={margin} onChange={(e) => setMargin(e.target.value)} /></label>
         <Button onClick={() => void saveSettings()} disabled={savingSettings}>{savingSettings ? 'Salvando...' : 'Salvar taxas'}</Button>
         {notice && <span style={{ color: '#059669', fontSize: 13, marginLeft: 8 }}>{notice}</span>}
-        <div style={{ width: '100%', fontSize: 12, color: '#9ca3af' }}>Preco sugerido = custo / (1 - taxa - margem). A % de lucro e a margem liquida sobre o preco de venda (ja com a taxa descontada).</div>
+        <div style={{ width: '100%', fontSize: 12, color: '#9ca3af' }}>Taxa aplicada sobre o preco de venda de cada canal. A margem de lucro esperada e definida em cada item do cardapio.</div>
       </div>
     {error && <div className="notice notice-error">{error}<button type="button" onClick={() => setError(null)}><X size={16}/></button></div>}
     <section className="content-card menu-toolbar-card">
-      <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
+      <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="Bomboniere">Bomboniere</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
     </section>
-    {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span><span>Sug. Balcao<strong>{money(suggestFromCost(cost.total).counter)}</strong></span><span>Sug. BySell<strong>{money(suggestFromCost(cost.total).bysell)}</strong></span><span>Sug. iFood<strong>{money(suggestFromCost(cost.total).ifood)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
+    {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span><span>Sug. Balcao<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).counter)}</strong></span><span>Sug. BySell<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).bysell)}</strong></span><span>Sug. iFood<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).ifood)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
 
     {modalOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setModalOpen(false) }}><form className="modal-card modal-wide menu-modal" onSubmit={submit}><button className="modal-close" type="button" onClick={() => setModalOpen(false)}><X size={18}/></button><h2>{editing ? 'Editar item do cardápio' : 'Novo item do cardápio'}</h2><p className="modal-description">Um item pode combinar quantas receitas e insumos diretos forem necessários.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>Custo direto<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(draftCost.total)}</strong></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>Balcao<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).counter)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.counter)?.pct ?? null)} de lucro</span></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>BySell<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).bysell)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.bysell)?.pct ?? null)} de lucro</span></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>iFood<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).ifood)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.ifood)?.pct ?? null)} de lucro</span></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, color: '#6b7280' }}>Custo direto</div>
+          <strong style={{ display: 'block', fontSize: 22, color: '#111827' }}>{money(draftCost.total)}</strong>
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>Lucro esperado</div>
+          <strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{pctLabel(itemMarginPct())}</strong>
+        </div>
+        {([['Balcao', fees.counter, parseOptionalMoney(draft.counterPrice)], ['BySell', fees.bysell, parseOptionalMoney(draft.bysellPrice)], ['iFood', fees.ifood, parseOptionalMoney(draft.ifoodPrice)]] as const).map(([label, fee, price]) => (
+          <div key={label}>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>{label}</div>
+            <div style={{ fontSize: 13, marginTop: 2 }}>Atual <strong>{money(price)}</strong></div>
+            <div style={{ fontSize: 13 }}>Lucro atual <strong>{pctLabel(channelPreview(price, fee, draftCost.total ?? 0)?.pct ?? null)}</strong></div>
+            <div style={{ fontSize: 13 }}>Sugerido <strong style={{ color: '#111827' }}>{money(suggestedFor(fee))}</strong></div>
+          </div>
+        ))}
       </div>
-      <div className="form-grid"><label>Nome<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Ex.: Jantinha 1"/></label><label>Categoria<input list="menu-categories" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Ex.: Executivos — Jantinhas"/><datalist id="menu-categories">{categories.filter((c) => c !== 'Todas').map((c) => <option key={c} value={c}/>)}</datalist></label><label>Preço balcão<input inputMode="decimal" value={draft.counterPrice} onChange={(e) => setDraft({ ...draft, counterPrice: e.target.value })} placeholder="0,00"/></label><label>Preço iFood<input inputMode="decimal" value={draft.ifoodPrice} onChange={(e) => setDraft({ ...draft, ifoodPrice: e.target.value })} placeholder="0,00"/></label><label>Preço BySell<input inputMode="decimal" value={draft.bysellPrice} onChange={(e) => setDraft({ ...draft, bysellPrice: e.target.value })} placeholder="0,00"/></label></div>
+      <div className="form-grid"><label>Nome<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Ex.: Jantinha 1"/></label><label>Categoria<input list="menu-categories" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Ex.: Executivos — Jantinhas"/><datalist id="menu-categories">{categories.filter((c) => c !== 'Todas').map((c) => <option key={c} value={c}/>)}<option value="Bomboniere"/></datalist></label><label>Preço balcão<input inputMode="decimal" value={draft.counterPrice} onChange={(e) => setDraft({ ...draft, counterPrice: e.target.value })} placeholder="0,00"/></label><label>Preço iFood<input inputMode="decimal" value={draft.ifoodPrice} onChange={(e) => setDraft({ ...draft, ifoodPrice: e.target.value })} placeholder="0,00"/></label><label>Preço BySell<input inputMode="decimal" value={draft.bysellPrice} onChange={(e) => setDraft({ ...draft, bysellPrice: e.target.value })} placeholder="0,00"/></label><label>Lucro esperado (%)<input inputMode="decimal" value={draft.targetMargin} onChange={(e) => setDraft({ ...draft, targetMargin: e.target.value })} placeholder="20"/></label></div>
       <div className="recipe-editor-heading"><div><span className="eyebrow">Composição</span><h3>Receitas e insumos</h3></div><div className="button-cluster"><Button type="button" variant="secondary" onClick={() => setDraft({ ...draft, components: [...draft.components, newComponent('recipe', recipes[0]?.id ?? '', 'porção')] })} icon={<BookOpen size={16}/>}>Adicionar receita</Button><Button type="button" variant="secondary" onClick={() => setDraft({ ...draft, components: [...draft.components, newComponent('ingredient', ingredients[0]?.id ?? '', ingredients[0]?.purchase_unit ?? 'un')] })} icon={<Boxes size={16}/>}>Adicionar insumo</Button></div></div>
       {!draft.components.length ? <div className="empty-state compact"><p>Este item ainda não possui composição. Bebidas prontas normalmente usam um insumo direto; pratos e caldos usam uma ou mais receitas.</p></div> : <div className="menu-component-editor">{draft.components.map((component) => { const recipe = component.type === 'recipe' ? recipeMap.get(component.targetId) : null; const ingredient = component.type === 'ingredient' ? ingredientMap.get(component.targetId) : null; const result = componentCost(component); return <div className="menu-component-row" key={component.key}><div className={`component-type-badge ${component.type}`} >{component.type === 'recipe' ? <BookOpen size={15}/> : <Boxes size={15}/>} {component.type === 'recipe' ? 'Receita' : 'Insumo'}</div><label>Componente<select value={component.targetId} onChange={(e) => { const nextIngredient = component.type === 'ingredient' ? ingredientMap.get(e.target.value) : null; updateComponent(component.key, { targetId: e.target.value, unit: nextIngredient?.purchase_unit ?? component.unit }) }}><option value="">Selecione</option>{component.type === 'recipe' ? recipes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>) : ingredients.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><small>{recipe ? `1 ${recipe.yield_unit.replace(/s$/, '')}` : ingredient ? `Compra em ${ingredient.purchase_unit}` : '—'}</small></label><label>Quantidade<input inputMode="decimal" value={component.quantity} onChange={(e) => updateComponent(component.key, { quantity: e.target.value })}/></label>{component.type === 'ingredient' ? <label>Unidade<select value={component.unit} onChange={(e) => updateComponent(component.key, { unit: e.target.value })}>{directUnits.map((unit) => <option key={unit}>{unit}</option>)}</select></label> : <div className="automatic-conversion">Porção da receita</div>}<div className="recipe-item-cost"><small>{result.incomplete ? 'Custo incompleto' : 'Custo calculado'}</small><strong>{money(result.cost)}</strong></div><button type="button" className="icon-action danger" onClick={() => setDraft({ ...draft, components: draft.components.filter((row) => row.key !== component.key) })}><Trash2 size={15}/></button></div>})}</div>}
       <div className="recipe-summary"><span>Custo direto<strong>{money(draftCost.total)}</strong></span><span>Componentes<strong>{draft.components.length}</strong></span><span className={draftCost.incomplete ? 'warning-summary' : 'highlight'}>{draftCost.incomplete ? 'Pendências' : 'Status'}<strong>{draftCost.incomplete ? draftCost.incomplete : 'Completo'}</strong></span></div>

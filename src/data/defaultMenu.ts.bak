@@ -18,7 +18,6 @@ export const defaultMenu = {
   'Cervejas — Long neck': ['Brahma','Skol','Boa','Original','Amstel','Eisenbahn','Heineken','Stella','Stella Pure Gold'],
   'Cervejas — Long neck especiais': ['Heineken','Heineken 0%','Budweiser'],
   'Cervejas — Latas': ['Brahma','Skol','Boa','Malzebier'],
-'Bomboniere': [],
   'Batidas': ['Batida de Abacaxi','Batida Morango','Batida Maracujá','Batida Pêssego','Batida dos Sonhos','Batida sem Álcool'],
   'Caipirinhas': ['Caipirinha Tradicional','Caipiroska','Saquerinha','Caipiríssima','Caipigin','Gin Tropical'],
   'Drinks': ['Alexander','Piña Colada','Sex on the Beach','Jorge Amado','Aperol Spritz','Marguerita','Frutas','Frutas Vermelhas','Kiwi','Limão','Maracujá','Morango','Uva'],
