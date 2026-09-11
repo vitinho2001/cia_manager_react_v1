@@ -27,6 +27,7 @@ export type Sale = {
 }
 
 export type CreateSaleInput = {
+  organization_id: string
   sale_date: string
   menu_item_id: string
   channel: SaleChannel

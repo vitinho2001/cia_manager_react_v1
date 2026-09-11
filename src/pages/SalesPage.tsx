@@ -304,7 +304,7 @@ export function SalesPage() {
         .map((r) => ({ r, id: resolve(r.product) }))
         .filter((x) => x.id)
         .map(({ r, id }) => ({
-          sale_date: date,
+          sale_date: date, organization_id: organizationId,
           menu_item_id: id,
           channel: importChannel,
           quantity: r.quantity,
@@ -341,7 +341,7 @@ export function SalesPage() {
     if (!organizationId || !manualItemId) return
     try {
       await createSale({
-        sale_date: date,
+        sale_date: date, organization_id: organizationId,
         menu_item_id: manualItemId,
         channel,
         quantity: Number(manualQty) || 1,
