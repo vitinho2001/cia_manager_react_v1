@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import * as XLSX from 'xlsx'
-import { CalendarDays, FileUp, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { FileUp, Link2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { getCurrentOrganizationId } from '../services/organization'
 import { createMenuItem, listMenuItems } from '../services/menu'
-import { createSale, createSales, deleteSale, listSales } from '../services/sales'
+import { createSale, createSales, deleteSale, listSales, updateSale } from '../services/sales'
 import type { MenuItem } from '../types/menu'
 import type { Sale, SaleChannel } from '../types/sales'
 
@@ -23,9 +23,37 @@ const channelLabel = (v: SaleChannel) => {
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-const pct = (p: number, w: number) => (w ? Math.round((p / w) * 1000) / 10 : 0)
 
 const normalize = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+
+// remove o plural simples ("caldos" -> "caldo")
+const singular = (v: string) => (v.endsWith('s') && v.length > 3 ? v.slice(0, -1) : v)
+
+// distancia de edicao (Levenshtein): quantas letras precisam mudar
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+// similaridade 0..1: 1 = identico. Tolerante a typos, acentos, plural e nome contido.
+function similar(name: string, item: string): number {
+  const a = singular(normalize(name))
+  const b = singular(normalize(item))
+  if (a === b) return 1
+  if (a.includes(b) || b.includes(a)) return 0.96
+  const d = levenshtein(a, b)
+  const max = Math.max(a.length, b.length)
+  if (!max) return 0
+  return Math.max(0, 1 - d / max)
+}
 
 function today() {
   const d = new Date()
@@ -95,6 +123,18 @@ function isBinaryWorkbook(buffer: ArrayBuffer) {
   return zip || xls
 }
 
+// cada produto do arquivo guarda sua associacao
+type LinkEntry = {
+  menuItemId: string
+  auto: boolean
+  score: number
+  create: boolean
+  newName: string
+}
+
+const AUTO_OK = 0.82
+const SUGGEST_OK = 0.6
+
 export function SalesPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [sales, setSales] = useState<Sale[]>([])
@@ -110,30 +150,18 @@ export function SalesPage() {
   const [manualTotal, setManualTotal] = useState('')
 
   const [importRows, setImportRows] = useState<ParsedRow[]>([])
-  const [pendingRows, setPendingRows] = useState<ParsedRow[]>([])
-  const [linkMap, setLinkMap] = useState<Record<string, string>>({})
-  const [createNames, setCreateNames] = useState<Record<string, string>>({})
+  const [linkEntries, setLinkEntries] = useState<Record<string, LinkEntry>>({})
+  const [pendingProducts, setPendingProducts] = useState<string[]>([])
+  const [showModal, setShowModal] = useState(false)
+  const [modalQuery, setModalQuery] = useState('')
   const [importing, setImporting] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
   const [fileName, setFileName] = useState('')
 
-  const totals = useMemo(() => {
-    const byChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
-    const qtyByChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
-    let total = 0
-    let quantity = 0
-    sales.forEach((s) => {
-      const amount = Number(s.total_amount) || 0
-      const qty = Number(s.quantity) || 0
-      total += amount
-      quantity += qty
-      if (byChannel[s.channel] !== undefined) {
-        byChannel[s.channel] += amount
-        qtyByChannel[s.channel] += qty
-      }
-    })
-    return { total, quantity, priced: sales.length, byChannel, qtyByChannel }
-  }, [sales])
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [editItemId, setEditItemId] = useState('')
+  const [editQuery, setEditQuery] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
   const load = useCallback(async () => {
     if (!organizationId) return
     setLoading(true)
@@ -142,13 +170,10 @@ export function SalesPage() {
       const res = await Promise.all([listSales(organizationId, date, date), listMenuItems(organizationId)])
       setSales(res[0])
       setMenuItems(res[1])
-     } catch (err) {
-      const detail = err && typeof err === 'object' && 'message' in err
-        ? String((err as { message?: unknown }).message)
-        : err instanceof Error ? err.message : String(err)
-      setError(detail || 'Falha ao importar vendas.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar vendas.')
     } finally {
-      setImporting(false)
+      setLoading(false)
     }
   }, [organizationId, date])
 
@@ -160,26 +185,28 @@ export function SalesPage() {
 
   useEffect(() => { void load() }, [load])
 
-  async function submitManual(e: FormEvent) {
-    e.preventDefault()
-    if (!organizationId || !manualItemId) return
-    setError(null)
-    try {
-      await createSale({
-        sale_date: date,
-        menu_item_id: manualItemId,
-        channel,
-        quantity: parseFloat(manualQty) || 1,
-        total_amount: parseFloat(manualTotal) || 0,
-        source: 'manual',
+  // monta a associacao inicial de cada produto do arquivo
+  function buildLinks(rows: ParsedRow[]) {
+    const entries: Record<string, LinkEntry> = {}
+    rows.forEach((r) => {
+      let best: MenuItem | null = null
+      let bestScore = 0
+      menuItems.forEach((m) => {
+        const s = similar(r.product, m.name)
+        if (s > bestScore) {
+          bestScore = s
+          best = m
+        }
       })
-      setManualItemId('')
-      setManualQty('1')
-      setManualTotal('')
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao lancar venda.')
-    }
+      if (best && bestScore >= AUTO_OK) {
+        entries[r.product] = { menuItemId: best.id, auto: true, score: bestScore, create: false, newName: r.product }
+      } else if (best && bestScore >= SUGGEST_OK) {
+        entries[r.product] = { menuItemId: best.id, auto: false, score: bestScore, create: false, newName: r.product }
+      } else {
+        entries[r.product] = { menuItemId: '', auto: false, score: 0, create: false, newName: r.product }
+      }
+    })
+    return entries
   }
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
@@ -190,33 +217,24 @@ export function SalesPage() {
       const buffer = reader.result as ArrayBuffer
       let rows: ParsedRow[] = []
       try {
-        if (isBinaryWorkbook(buffer)) {
-          rows = parseWorkbook(buffer)
-        } else {
-          rows = parseCsv(new TextDecoder('utf-8').decode(buffer))
-        }
-      } catch (err) {
+        rows = isBinaryWorkbook(buffer) ? parseWorkbook(buffer) : parseCsv(new TextDecoder('utf-8').decode(buffer))
+      } catch {
         setError('Nao foi possivel ler o arquivo. Salve como .xlsx ou .csv e tente novamente.')
         return
       }
-      if (rows.length === 0) {
+      if (!rows.length) {
         setError('Nenhuma linha valida encontrada. O arquivo precisa ter as colunas produto, quantidade e total.')
         return
       }
-      const lookup = new Map<string, string>()
-      menuItems.forEach((m) => lookup.set(normalize(m.name), m.id))
-      const links: Record<string, string> = {}
-      rows.forEach((r) => {
-        const id = lookup.get(normalize(r.product))
-        if (id) links[r.product] = id
-      })
+      const entries = buildLinks(rows)
       setFileName(file.name)
       setImportRows(rows)
-      setLinkMap(links)
-      setPendingRows(rows.filter((r) => !links[r.product]))
-      setCreateNames({})
+      setLinkEntries(entries)
+      setPendingProducts(rows.filter((r) => !entries[r.product].menuItemId).map((r) => r.product))
+      setModalQuery('')
       setResultMsg(null)
       setError(null)
+      setShowModal(true)
     }
     reader.onerror = () => setError('Falha ao abrir o arquivo.')
     reader.readAsArrayBuffer(file)
@@ -225,34 +243,32 @@ export function SalesPage() {
 
   function cancelImport() {
     setImportRows([])
-    setPendingRows([])
-    setLinkMap({})
-    setCreateNames({})
+    setPendingProducts([])
+    setLinkEntries({})
     setResultMsg(null)
     setError(null)
     setFileName('')
+    setShowModal(false)
+  }
+
+  function setEntry(product: string, patch: Partial<LinkEntry>) {
+    setLinkEntries((prev) => ({ ...prev, [product]: { ...prev[product], ...patch } }))
   }
   async function confirmImport() {
     if (!organizationId) return
     setImporting(true)
     setError(null)
     try {
-      const toCreate: ParsedRow[] = []
-      const seen = new Set<string>()
-      pendingRows.forEach((r) => {
-        if (linkMap[r.product] !== '__create__') return
-        const name = (createNames[r.product] ?? r.product).trim() || r.product
-        const key = normalize(name)
-        if (seen.has(key)) return
-        seen.add(key)
-        toCreate.push(r)
-      })
-
+      // 1) cria os itens marcados como "novo item"
+      const toCreate = Array.from(new Set(
+        Object.entries(linkEntries)
+          .filter(([, e]) => e.create)
+          .map(([product, e]) => (e.newName ?? product).trim() || product)
+      ))
       if (toCreate.length > 0) {
         const existing = await listMenuItems(organizationId)
         const known = new Set(existing.map((m) => normalize(m.name)))
-        for (const r of toCreate) {
-          const name = (createNames[r.product] ?? r.product).trim() || r.product
+        for (const name of toCreate) {
           if (known.has(normalize(name))) continue
           try {
             await createMenuItem({
@@ -271,25 +287,24 @@ export function SalesPage() {
         }
       }
 
+      // 2) resolve o id final de cada produto (recém-criado ou já escolhido)
       const fresh = await listMenuItems(organizationId)
       const freshLookup = new Map<string, string>()
       fresh.forEach((m) => freshLookup.set(normalize(m.name), m.id))
 
-      const finalLinks: Record<string, string> = { ...linkMap }
-      pendingRows.forEach((r) => {
-        if (finalLinks[r.product] === '__create__') {
-          const name = (createNames[r.product] ?? r.product).trim() || r.product
-          const id = freshLookup.get(normalize(name))
-          if (id) finalLinks[r.product] = id
-          else delete finalLinks[r.product]
-        }
-      })
+      const resolve = (product: string) => {
+        const e = linkEntries[product]
+        if (!e) return ''
+        if (e.create) return freshLookup.get(normalize((e.newName ?? product).trim() || product)) ?? ''
+        return e.menuItemId
+      }
 
       const inputs = importRows
-        .filter((r) => finalLinks[r.product] && finalLinks[r.product] !== '__create__')
-        .map((r) => ({
+        .map((r) => ({ r, id: resolve(r.product) }))
+        .filter((x) => x.id)
+        .map(({ r, id }) => ({
           sale_date: date,
-          menu_item_id: finalLinks[r.product],
+          menu_item_id: id,
           channel: importChannel,
           quantity: r.quantity,
           total_amount: r.total,
@@ -301,17 +316,47 @@ export function SalesPage() {
       const skipped = importRows.length - inputs.length
       setResultMsg(
         skipped > 0
-          ? inputs.length + ' venda(s) importada(s). ' + skipped + ' linha(s) ficaram sem link e foram ignoradas.'
+          ? inputs.length + ' venda(s) importada(s). ' + skipped + ' linha(s) ficaram sem associacao e foram ignoradas.'
           : inputs.length + ' venda(s) importada(s) com sucesso.'
       )
-      setPendingRows([])
       setImportRows([])
+      setPendingProducts([])
+      setLinkEntries({})
+      setShowModal(false)
       setFileName('')
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao importar vendas.')
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao importar vendas.')
     } finally {
       setImporting(false)
+    }
+  }
+
+  async function submitManual(e: FormEvent) {
+    e.preventDefault()
+    if (!organizationId || !manualItemId) return
+    try {
+      await createSale({
+        sale_date: date,
+        menu_item_id: manualItemId,
+        channel,
+        quantity: Number(manualQty) || 1,
+        total_amount: Number(manualTotal) || 0,
+        source: 'manual',
+      })
+      setManualItemId('')
+      setManualQty('1')
+      setManualTotal('')
+      setResultMsg('Venda lancada.')
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao lancar venda.')
     }
   }
 
@@ -324,19 +369,68 @@ export function SalesPage() {
       setError(err instanceof Error ? err.message : 'Falha ao excluir venda.')
     }
   }
+  // itens do cardapio filtrados pela busca do modal
+  const filteredMenu = useMemo(() => {
+    const q = normalize(modalQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, modalQuery])
+
+  const filteredEditMenu = useMemo(() => {
+    const q = normalize(editQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, editQuery])
+
+  // abre o modal de edicao de uma venda ja importada
+  function openEdit(sale: Sale) {
+    setEditingSale(sale)
+    setEditItemId(sale.menu_item_id)
+    setEditQuery('')
+  }
+
+  async function saveEdit() {
+    if (!editingSale || !editItemId) return
+    setEditSaving(true)
+    setError(null)
+    try {
+      await updateSale(editingSale.id, { menu_item_id: editItemId })
+      setResultMsg('Associacao atualizada.')
+      setEditingSale(null)
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao atualizar associacao.')
+    } finally {
+      setEditSaving(false)
+    }
+  }
 
   const boxBase = { borderRadius: 12, padding: '14px 16px', flex: '1 1 150px' }
+
+  const totals = useMemo(() => {
+    let total = 0
+    let quantity = 0
+    const byChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    const qtyByChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    sales.forEach((s) => {
+      const v = Number(s.total_amount) || 0
+      total += v
+      quantity += Number(s.quantity) || 0
+      byChannel[s.channel] += v
+      qtyByChannel[s.channel] += Number(s.quantity) || 0
+    })
+    return { total, quantity, priced: sales.length, byChannel, qtyByChannel }
+  }, [sales])
   return (
     <div className="page-container">
       <PageHeader
         eyebrow="Vendas"
         title="Vendas"
         description="Vendas por produto, canal e periodo."
-        actions={
-          <Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>
-            Atualizar
-          </Button>
-        }
+        actions={<Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button>}
       />
 
       {error && (
@@ -353,54 +447,49 @@ export function SalesPage() {
       )}
 
       <section className="panel">
+        <h2>Resumo do dia</h2>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
-            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.7 }}>
-              Vendas totais do dia
-            </span>
-            <strong style={{ display: 'block', fontSize: 28, marginTop: 6 }}>{brl(totals.total)}</strong>
-            <span style={{ display: 'block', fontSize: 12, marginTop: 4, opacity: 0.7 }}>
-              {totals.quantity} itens - {totals.priced} lancamento(s)
-            </span>
+          <div style={boxBase}>
+            <strong>{brl(totals.total)}</strong>
+            <span>Total</span>
           </div>
+          <div style={boxBase}>
+            <strong>{totals.quantity}</strong>
+            <span>Itens vendidos</span>
+          </div>
+          <div style={boxBase}>
+            <strong>{totals.priced}</strong>
+            <span>Vendas</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
           {CHANNELS.map((c) => (
-            <div key={c.value} style={{ ...boxBase, background: '#ffffff', border: '1px solid #e5e7eb' }}>
-              <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', color: '#6b7280' }}>
-                {c.label}
-              </span>
-              <strong style={{ display: 'block', fontSize: 20, marginTop: 6, color: '#111827' }}>
-                {brl(totals.byChannel[c.value])}
-              </strong>
-              <span style={{ display: 'block', fontSize: 12, marginTop: 4, color: '#9ca3af' }}>
-                {totals.qtyByChannel[c.value]} itens - {pct(totals.byChannel[c.value], totals.total)}% do total
-              </span>
+            <div key={c.value} style={boxBase}>
+              <strong>{brl(totals.byChannel[c.value])}</strong>
+              <span>{c.label}</span>
             </div>
           ))}
         </div>
       </section>
 
       <section className="panel">
-        <div className="table-toolbar">
-          <label className="month-control">
-            <CalendarDays size={16} />
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label>
+            Dia
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
-          <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
-            {CHANNELS.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          <div className="search-box table-search">
-            <Search size={16} />
-            <input placeholder="Buscar em vendas" />
-          </div>
+          <label>
+            Canal
+            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <div className="search-box table-search"><Search size={16} /><input placeholder="Buscar em vendas" /></div>
         </div>
         <div className="table-wrap">
           <table>
             <thead>
-              <tr>
-                <th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th>
-              </tr>
+              <tr><th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th></tr>
             </thead>
             <tbody>
               {sales.length === 0 ? (
@@ -415,15 +504,22 @@ export function SalesPage() {
               ) : sales.map((s) => (
                 <tr key={s.id}>
                   <td>{s.sale_date}</td>
-                  <td>{s.menu_item?.name ?? '-'}</td>
+                  <td>
+                    {s.menu_item?.name ?? <span className="badge badge-warn">Sem associacao</span>}
+                  </td>
                   <td>{channelLabel(s.channel)}</td>
                   <td>{s.quantity}</td>
                   <td>{brl(Number(s.total_amount) || 0)}</td>
                   <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
                   <td>
-                    <button className="text-button" type="button" onClick={() => void removeSale(s.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" className="icon-btn" title="Editar associacao" onClick={() => openEdit(s)}>
+                        <Link2 size={16} />
+                      </button>
+                      <button type="button" className="icon-btn" title="Excluir" onClick={() => void removeSale(s.id)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -431,22 +527,25 @@ export function SalesPage() {
           </table>
         </div>
       </section>
-
       <section className="panel">
-        <h2>Lancamento manual</h2>
-        <form className="modal-card modal-wide" onSubmit={submitManual}>
+        <h2>Lancar venda</h2>
+        <form onSubmit={(e) => void submitManual(e)} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <label>
-            Item do cardapio
+            Item
             <select className="select-control" value={manualItemId} onChange={(e) => setManualItemId(e.target.value)} required>
-              <option value="">Selecione...</option>
-              {menuItems.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
+              <option value="">Selecione um item</option>
+              {menuItems.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
           <label>
-            Quantidade
-            <input type="number" min="0" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} />
+            Canal
+            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Qtd
+            <input type="number" min="1" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} required />
           </label>
           <label>
             Total (R$)
@@ -457,82 +556,138 @@ export function SalesPage() {
       </section>
 
       <section className="panel">
-        <h2>Importar CSV ou Excel</h2>
-        <p>
-          O arquivo precisa ter as colunas <strong>produto</strong>, <strong>quantidade</strong> e <strong>total</strong>.
-          Aceita .csv, .xlsx e .xls. Escolha o canal da importacao antes de importar.
-        </p>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-          <label className="month-control">
-            Canal da importacao
-            <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>
-              {CHANNELS.map((c) => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <h2>Importar vendas</h2>
+        <p>O arquivo deve ter as colunas: <strong>produto, quantidade, total</strong> (.xlsx ou .csv). Selecione o dia e o canal antes de importar.</p>
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Canal da importacao
+          <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>
+            {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
         <label className="file-input">
           <FileUp size={16} />
           <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFile} />
         </label>
         {importRows.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-            <p style={{ margin: 0 }}>
-              <strong>{importRows.length}</strong> linha(s) lida(s){fileName ? ' de ' + fileName : ''}.
-            </p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+            <p><strong>{importRows.length}</strong> linha(s) de <strong>{fileName}</strong>.</p>
             <Button onClick={() => void confirmImport()} disabled={importing}>
-              Importar {importRows.length} venda(s)
+              {importing ? 'Importando...' : 'Importar ' + importRows.length + ' venda(s)'}
             </Button>
-            <Button onClick={cancelImport} disabled={importing}>
-              Cancelar importacao
-            </Button>
+            <Button onClick={cancelImport} disabled={importing}>Cancelar importacao</Button>
           </div>
         )}
       </section>
-
-      {pendingRows.length > 0 && (
+      {/* Modal de vinculacao dos produtos importados */}
+      {showModal && (
         <div className="modal-overlay">
-          <div className="modal-card modal-wide">
+          <div className="modal">
             <div className="modal-header">
-              <h2>Vincular itens ao cardapio</h2>
-              <button className="modal-close" type="button" onClick={cancelImport}><X size={18} /></button>
+              <h3>Vincular itens ao cardapio</h3>
+              <button type="button" className="icon-btn" onClick={cancelImport}><X size={16} /></button>
             </div>
             <p>
-              Estes produtos do arquivo nao foram encontrados no cardapio. Vincule a um item existente,
-              crie um novo item, ou deixe sem link (a linha sera ignorada com aviso).
+              Associe cada produto do arquivo a um item do cardapio. Correspondencias automaticas ja foram
+              marcadas. Itens sem associacao ficam destacados e podem ser ignorados.
             </p>
-            {pendingRows.map((r) => (
-              <div key={r.product} className="modal-row">
-                <div>
-                  <strong>{r.product}</strong>
-                  <span>qtd {r.quantity} - total {brl(r.total)}</span>
-                </div>
-                <select
-                  className="select-control"
-                  value={linkMap[r.product] ?? ''}
-                  onChange={(e) => setLinkMap({ ...linkMap, [r.product]: e.target.value })}
-                >
-                  <option value="">- deixar sem link (ignorar) -</option>
-                  <option value="__create__">Criar novo item no cardapio</option>
-                  {menuItems.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-                {linkMap[r.product] === '__create__' && (
-                  <input
-                    className="input-control"
-                    value={createNames[r.product] ?? r.product}
-                    onChange={(e) => setCreateNames({ ...createNames, [r.product]: e.target.value })}
-                  />
-                )}
+
+            {pendingProducts.length > 0 && (
+              <div className="notice notice-warn">
+                {pendingProducts.length} produto(s) sem correspondencia automatica. Revise abaixo.
               </div>
-            ))}
-            <div className="modal-actions">
+            )}
+
+            <div className="modal-body">
+              {importRows.map((r) => {
+                const entry = linkEntries[r.product]
+                const isPending = !entry || !entry.menuItemId
+                return (
+                  <div key={r.product} className="modal-row">
+                    <div className="modal-row-info">
+                      <strong>{r.product}</strong>
+                      <span>{r.quantity} x {brl(r.total)}</span>
+                      {entry?.auto && <span className="badge badge-ok">Automatico</span>}
+                      {entry && !entry.auto && entry.menuItemId && <span className="badge badge-info">Sugestao</span>}
+                      {isPending && <span className="badge badge-warn">Sem associacao</span>}
+                    </div>
+
+                    <div className="modal-row-controls">
+                      <input
+                        type="text"
+                        placeholder="Buscar item do cardapio..."
+                        value={modalQuery}
+                        onChange={(e) => setModalQuery(e.target.value)}
+                      />
+                      <select
+                        className="select-control"
+                        value={entry?.create ? '__create__' : (entry?.menuItemId ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '__create__') {
+                            setEntry(r.product, { create: true, menuItemId: '', auto: false, score: 0 })
+                          } else {
+                            setEntry(r.product, { create: false, menuItemId: v, auto: false, score: 0 })
+                          }
+                        }}
+                      >
+                        <option value="">Deixar sem associacao</option>
+                        {filteredMenu.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                        <option value="__create__">Criar novo item no cardapio</option>
+                      </select>
+                      {entry?.create && (
+                        <input
+                          type="text"
+                          placeholder="Nome do novo item"
+                          value={entry.newName}
+                          onChange={(e) => setEntry(r.product, { newName: e.target.value })}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="modal-footer">
+              <Button onClick={cancelImport} disabled={importing}>Cancelar</Button>
               <Button onClick={() => void confirmImport()} disabled={importing}>
                 {importing ? 'Importando...' : 'Confirmar importacao'}
               </Button>
-              <Button onClick={cancelImport} disabled={importing}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de edicao da associacao (pos-importacao) */}
+      {editingSale && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Editar associacao</h3>
+              <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>
+            </div>
+            <p>
+              Venda de <strong>{editingSale.sale_date}</strong> — {editingSale.quantity} x {brl(Number(editingSale.total_amount) || 0)}.
+              Escolha o item do cardapio correspondente. Esta edicao vale tambem para vendas ja importadas.
+            </p>
+            <input
+              type="text"
+              placeholder="Buscar item do cardapio..."
+              value={editQuery}
+              onChange={(e) => setEditQuery(e.target.value)}
+            />
+            <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
+              <option value="">Sem associacao</option>
+              {filteredEditMenu.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <div className="modal-footer">
+              <Button onClick={() => setEditingSale(null)} disabled={editSaving}>Cancelar</Button>
+              <Button onClick={() => void saveEdit()} disabled={editSaving || !editItemId}>
+                {editSaving ? 'Salvando...' : 'Salvar associacao'}
+              </Button>
             </div>
           </div>
         </div>

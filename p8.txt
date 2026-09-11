@@ -1,0 +1,82 @@
+
+      {/* Modal de vinculacao dos produtos importados */}
+      {showModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Vincular itens ao cardapio</h3>
+              <button type="button" className="icon-btn" onClick={cancelImport}><X size={16} /></button>
+            </div>
+            <p>
+              Associe cada produto do arquivo a um item do cardapio. Correspondencias automaticas ja foram
+              marcadas. Itens sem associacao ficam destacados e podem ser ignorados.
+            </p>
+
+            {pendingProducts.length > 0 && (
+              <div className="notice notice-warn">
+                {pendingProducts.length} produto(s) sem correspondencia automatica. Revise abaixo.
+              </div>
+            )}
+
+            <div className="modal-body">
+              {importRows.map((r) => {
+                const entry = linkEntries[r.product]
+                const isPending = !entry || !entry.menuItemId
+                return (
+                  <div key={r.product} className="modal-row">
+                    <div className="modal-row-info">
+                      <strong>{r.product}</strong>
+                      <span>{r.quantity} x {brl(r.total)}</span>
+                      {entry?.auto && <span className="badge badge-ok">Automatico</span>}
+                      {entry && !entry.auto && entry.menuItemId && <span className="badge badge-info">Sugestao</span>}
+                      {isPending && <span className="badge badge-warn">Sem associacao</span>}
+                    </div>
+
+                    <div className="modal-row-controls">
+                      <input
+                        type="text"
+                        placeholder="Buscar item do cardapio..."
+                        value={modalQuery}
+                        onChange={(e) => setModalQuery(e.target.value)}
+                      />
+                      <select
+                        className="select-control"
+                        value={entry?.create ? '__create__' : (entry?.menuItemId ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '__create__') {
+                            setEntry(r.product, { create: true, menuItemId: '', auto: false, score: 0 })
+                          } else {
+                            setEntry(r.product, { create: false, menuItemId: v, auto: false, score: 0 })
+                          }
+                        }}
+                      >
+                        <option value="">Deixar sem associacao</option>
+                        {filteredMenu.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                        <option value="__create__">Criar novo item no cardapio</option>
+                      </select>
+                      {entry?.create && (
+                        <input
+                          type="text"
+                          placeholder="Nome do novo item"
+                          value={entry.newName}
+                          onChange={(e) => setEntry(r.product, { newName: e.target.value })}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="modal-footer">
+              <Button onClick={cancelImport} disabled={importing}>Cancelar</Button>
+              <Button onClick={() => void confirmImport()} disabled={importing}>
+                {importing ? 'Importando...' : 'Confirmar importacao'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}

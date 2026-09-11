@@ -1,0 +1,90 @@
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
+import { CalendarDays, FileUp, Link2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Button } from '../components/Button'
+import { PageHeader } from '../components/PageHeader'
+import { getCurrentOrganizationId } from '../services/organization'
+import { createMenuItem, listMenuItems } from '../services/menu'
+import { createSale, createSales, deleteSale, listSales, updateSale } from '../services/sales'
+import type { MenuItem } from '../types/menu'
+import type { Sale, SaleChannel } from '../types/sales'
+
+const CHANNELS: { value: SaleChannel; label: string }[] = [
+  { value: 'counter', label: 'Balcao' },
+  { value: 'ifood', label: 'iFood' },
+  { value: 'bysell', label: 'BySell' },
+  { value: 'other', label: 'Outros' },
+]
+
+const channelLabel = (v: SaleChannel) => {
+  for (const c of CHANNELS) if (c.value === v) return c.label
+  return v
+}
+
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+const pct = (p: number, w: number) => (w ? Math.round((p / w) * 1000) / 10 : 0)
+
+const normalize = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+
+// remove o plural simples ("caldos" -> "caldo")
+const singular = (v: string) => (v.endsWith('s') && v.length > 3 ? v.slice(0, -1) : v)
+
+// distancia de edicao (Levenshtein): quantas letras precisam mudar
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+// similaridade 0..1: 1 = identico. Tolerante a typos, acentos, plural e nome contido.
+function similar(name: string, item: string): number {
+  const a = singular(normalize(name))
+  const b = singular(normalize(item))
+  if (a === b) return 1
+  if (a.includes(b) || b.includes(a)) return 0.96
+  const d = levenshtein(a, b)
+  const max = Math.max(a.length, b.length)
+  if (!max) return 0
+  return Math.max(0, 1 - d / max)
+}
+
+function today() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return d.getFullYear() + '-' + m + '-' + day
+}
+
+type ParsedRow = { product: string; quantity: number; total: number }
+
+function toNumber(value: unknown): number {
+  if (value == null) return 0
+  if (typeof value === 'number') return isNaN(value) ? 0 : value
+  const raw = String(value).trim().replace(/\s/g, '').replace(/R\$/g, '')
+  if (!raw) return 0
+  const s = raw.indexOf(',') >= 0 ? raw.replace(/\./g, '').replace(',', '.') : raw
+  const n = parseFloat(s)
+  return isNaN(n) ? 0 : n
+}
+
+function parseCsv(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (!lines.length) return []
+  const sep = lines[0].indexOf(';') >= 0 ? ';' : ','
+  const rows: ParsedRow[] = []
+  lines.forEach((line, i) => {
+    const c = line.split(sep).map((x) => x.trim().replace(/^"|"$/g, ''))
+    if (i === 0 && /produto|item|nome|descricao/i.test(c[0] ?? '')) return
+    if (!c[0]) return
+    rows.push({ product: c[0], quantity: toNumber(c[1]) || 1, total: toNumber(c[2]) })
+  })
+  return rows
+}

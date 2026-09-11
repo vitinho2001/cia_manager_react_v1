@@ -1,0 +1,52 @@
+
+      <section className="panel">
+        <h2>Lancar venda</h2>
+        <form onSubmit={(e) => void submitManual(e)} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label>
+            Item
+            <select className="select-control" value={manualItemId} onChange={(e) => setManualItemId(e.target.value)} required>
+              <option value="">Selecione um item</option>
+              {menuItems.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Canal
+            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Qtd
+            <input type="number" min="1" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} required />
+          </label>
+          <label>
+            Total (R$)
+            <input type="number" min="0" step="any" value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} required />
+          </label>
+          <Button icon={<Plus size={16} />}>Lancar venda</Button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>Importar vendas</h2>
+        <p>O arquivo deve ter as colunas: <strong>produto, quantidade, total</strong> (.xlsx ou .csv). Selecione o dia e o canal antes de importar.</p>
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Canal da importacao
+          <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>
+            {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
+        <label className="file-input">
+          <FileUp size={16} />
+          <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFile} />
+        </label>
+        {importRows.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+            <p><strong>{importRows.length}</strong> linha(s) de <strong>{fileName}</strong>.</p>
+            <Button onClick={() => void confirmImport()} disabled={importing}>
+              {importing ? 'Importando...' : 'Importar ' + importRows.length + ' venda(s)'}
+            </Button>
+            <Button onClick={cancelImport} disabled={importing}>Cancelar importacao</Button>
+          </div>
+        )}
+      </section>

@@ -1,0 +1,76 @@
+
+function parseWorkbook(buffer: ArrayBuffer): ParsedRow[] {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const rows: ParsedRow[] = []
+  wb.SheetNames.forEach((name) => {
+    const sheet = wb.Sheets[name]
+    if (!sheet) return
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+    json.forEach((row) => {
+      const keys = Object.keys(row)
+      if (!keys.length) return
+      const pick = (cands: string[], idx: number) => {
+        for (const c of cands) {
+          const found = keys.filter((k) => normalize(k) === c)[0]
+          if (found) return row[found]
+        }
+        return keys[idx] ? row[keys[idx]] : ''
+      }
+      const product = String(pick(['produto', 'item', 'nome', 'descricao'], 0) ?? '').trim()
+      if (!product) return
+      rows.push({
+        product,
+        quantity: toNumber(pick(['quantidade', 'qtd', 'qtde'], 1)) || 1,
+        total: toNumber(pick(['total', 'valor', 'valor total', 'receita'], 2)),
+      })
+    })
+  })
+  return rows
+}
+
+function isBinaryWorkbook(buffer: ArrayBuffer) {
+  const b = new Uint8Array(buffer.slice(0, 8))
+  const zip = b[0] === 0x50 && b[1] === 0x4b
+  const xls = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0xa1 && b[3] === 0xb1
+  return zip || xls
+}
+
+// cada produto do arquivo guarda sua associacao
+type LinkEntry = {
+  menuItemId: string
+  auto: boolean
+  score: number
+  create: boolean
+  newName: string
+}
+
+const AUTO_OK = 0.82
+const SUGGEST_OK = 0.6
+
+export function SalesPage() {
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [sales, setSales] = useState<Sale[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [date, setDate] = useState(today())
+  const [channel, setChannel] = useState<SaleChannel>('counter')
+  const [importChannel, setImportChannel] = useState<SaleChannel>('counter')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [manualItemId, setManualItemId] = useState('')
+  const [manualQty, setManualQty] = useState('1')
+  const [manualTotal, setManualTotal] = useState('')
+
+  const [importRows, setImportRows] = useState<ParsedRow[]>([])
+  const [linkEntries, setLinkEntries] = useState<Record<string, LinkEntry>>({})
+  const [pendingProducts, setPendingProducts] = useState<string[]>([])
+  const [showModal, setShowModal] = useState(false)
+  const [modalQuery, setModalQuery] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [editItemId, setEditItemId] = useState('')
+  const [editQuery, setEditQuery] = useState('')
+  const [editSaving, setEditSaving] = useState(false)

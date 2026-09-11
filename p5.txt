@@ -1,0 +1,56 @@
+
+  // itens do cardapio filtrados pela busca do modal
+  const filteredMenu = useMemo(() => {
+    const q = normalize(modalQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, modalQuery])
+
+  const filteredEditMenu = useMemo(() => {
+    const q = normalize(editQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, editQuery])
+
+  // abre o modal de edicao de uma venda ja importada
+  function openEdit(sale: Sale) {
+    setEditingSale(sale)
+    setEditItemId(sale.menu_item_id)
+    setEditQuery('')
+  }
+
+  async function saveEdit() {
+    if (!editingSale || !editItemId) return
+    setEditSaving(true)
+    setError(null)
+    try {
+      await updateSale(editingSale.id, { menu_item_id: editItemId })
+      setResultMsg('Associacao atualizada.')
+      setEditingSale(null)
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao atualizar associacao.')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const boxBase = { borderRadius: 12, padding: '14px 16px', flex: '1 1 150px' }
+
+  const totals = useMemo(() => {
+    let total = 0
+    let quantity = 0
+    const byChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    const qtyByChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    sales.forEach((s) => {
+      const v = Number(s.total_amount) || 0
+      total += v
+      quantity += Number(s.quantity) || 0
+      byChannel[s.channel] += v
+      qtyByChannel[s.channel] += Number(s.quantity) || 0
+    })
+    return { total, quantity, priced: sales.length, byChannel, qtyByChannel }
+  }, [sales])

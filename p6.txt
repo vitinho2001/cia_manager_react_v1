@@ -1,0 +1,104 @@
+
+  return (
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Vendas"
+        title="Vendas"
+        description="Vendas por produto, canal e periodo."
+        actions={<Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button>}
+      />
+
+      {error && (
+        <div className="notice notice-error">
+          {error}
+          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
+        </div>
+      )}
+      {resultMsg && (
+        <div className="notice">
+          {resultMsg}
+          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      <section className="panel">
+        <h2>Resumo do dia</h2>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={boxBase}>
+            <strong>{brl(totals.total)}</strong>
+            <span>Total</span>
+          </div>
+          <div style={boxBase}>
+            <strong>{totals.quantity}</strong>
+            <span>Itens vendidos</span>
+          </div>
+          <div style={boxBase}>
+            <strong>{totals.priced}</strong>
+            <span>Vendas</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+          {CHANNELS.map((c) => (
+            <div key={c.value} style={boxBase}>
+              <strong>{brl(totals.byChannel[c.value])}</strong>
+              <span>{c.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label>
+            Dia
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <label>
+            Canal
+            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <div className="search-box table-search"><Search size={16} /><input placeholder="Buscar em vendas" /></div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th></tr>
+            </thead>
+            <tbody>
+              {sales.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">
+                      <h2>Nenhuma venda neste dia</h2>
+                      <p>Lance manualmente abaixo ou importe um arquivo.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : sales.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.sale_date}</td>
+                  <td>
+                    {s.menu_item?.name ?? <span className="badge badge-warn">Sem associacao</span>}
+                  </td>
+                  <td>{channelLabel(s.channel)}</td>
+                  <td>{s.quantity}</td>
+                  <td>{brl(Number(s.total_amount) || 0)}</td>
+                  <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" className="icon-btn" title="Editar associacao" onClick={() => openEdit(s)}>
+                        <Link2 size={16} />
+                      </button>
+                      <button type="button" className="icon-btn" title="Excluir" onClick={() => void removeSale(s.id)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>

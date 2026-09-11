@@ -1,0 +1,37 @@
+
+      {/* Modal de edicao da associacao (pos-importacao) */}
+      {editingSale && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Editar associacao</h3>
+              <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>
+            </div>
+            <p>
+              Venda de <strong>{editingSale.sale_date}</strong> — {editingSale.quantity} x {brl(Number(editingSale.total_amount) || 0)}.
+              Escolha o item do cardapio correspondente. Esta edicao vale tambem para vendas ja importadas.
+            </p>
+            <input
+              type="text"
+              placeholder="Buscar item do cardapio..."
+              value={editQuery}
+              onChange={(e) => setEditQuery(e.target.value)}
+            />
+            <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
+              <option value="">Sem associacao</option>
+              {filteredEditMenu.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <div className="modal-footer">
+              <Button onClick={() => setEditingSale(null)} disabled={editSaving}>Cancelar</Button>
+              <Button onClick={() => void saveEdit()} disabled={editSaving || !editItemId}>
+                {editSaving ? 'Salvando...' : 'Salvar associacao'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

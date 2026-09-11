@@ -1,0 +1,116 @@
+
+  async function confirmImport() {
+    if (!organizationId) return
+    setImporting(true)
+    setError(null)
+    try {
+      // 1) cria os itens marcados como "novo item"
+      const toCreate = Array.from(new Set(
+        Object.entries(linkEntries)
+          .filter(([, e]) => e.create)
+          .map(([product, e]) => (e.newName ?? product).trim() || product)
+      ))
+      if (toCreate.length > 0) {
+        const existing = await listMenuItems(organizationId)
+        const known = new Set(existing.map((m) => normalize(m.name)))
+        for (const name of toCreate) {
+          if (known.has(normalize(name))) continue
+          try {
+            await createMenuItem({
+              organizationId,
+              name,
+              category: 'Outros',
+              counterPrice: null,
+              ifoodPrice: null,
+              bysellPrice: null,
+              components: [],
+            })
+            known.add(normalize(name))
+          } catch (err) {
+            console.warn('Item nao criado:', name, err)
+          }
+        }
+      }
+
+      // 2) resolve o id final de cada produto (recém-criado ou já escolhido)
+      const fresh = await listMenuItems(organizationId)
+      const freshLookup = new Map<string, string>()
+      fresh.forEach((m) => freshLookup.set(normalize(m.name), m.id))
+
+      const resolve = (product: string) => {
+        const e = linkEntries[product]
+        if (!e) return ''
+        if (e.create) return freshLookup.get(normalize((e.newName ?? product).trim() || product)) ?? ''
+        return e.menuItemId
+      }
+
+      const inputs = importRows
+        .map((r) => ({ r, id: resolve(r.product) }))
+        .filter((x) => x.id)
+        .map(({ r, id }) => ({
+          sale_date: date,
+          menu_item_id: id,
+          channel: importChannel,
+          quantity: r.quantity,
+          total_amount: r.total,
+          source: 'import' as const,
+        }))
+
+      if (inputs.length > 0) await createSales(inputs)
+
+      const skipped = importRows.length - inputs.length
+      setResultMsg(
+        skipped > 0
+          ? inputs.length + ' venda(s) importada(s). ' + skipped + ' linha(s) ficaram sem associacao e foram ignoradas.'
+          : inputs.length + ' venda(s) importada(s) com sucesso.'
+      )
+      setImportRows([])
+      setPendingProducts([])
+      setLinkEntries({})
+      setShowModal(false)
+      setFileName('')
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao importar vendas.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function submitManual(e: FormEvent) {
+    e.preventDefault()
+    if (!organizationId || !manualItemId) return
+    try {
+      await createSale({
+        sale_date: date,
+        menu_item_id: manualItemId,
+        channel,
+        quantity: Number(manualQty) || 1,
+        total_amount: Number(manualTotal) || 0,
+        source: 'manual',
+      })
+      setManualItemId('')
+      setManualQty('1')
+      setManualTotal('')
+      setResultMsg('Venda lancada.')
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao lancar venda.')
+    }
+  }
+
+  async function removeSale(id: string) {
+    if (!window.confirm('Excluir esta venda?')) return
+    try {
+      await deleteSale(id)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao excluir venda.')
+    }
+  }

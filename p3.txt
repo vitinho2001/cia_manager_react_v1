@@ -1,0 +1,93 @@
+
+  const load = useCallback(async () => {
+    if (!organizationId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await Promise.all([listSales(organizationId, date, date), listMenuItems(organizationId)])
+      setSales(res[0])
+      setMenuItems(res[1])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar vendas.')
+    } finally {
+      setLoading(false)
+    }
+  }, [organizationId, date])
+
+  useEffect(() => {
+    getCurrentOrganizationId()
+      .then(setOrganizationId)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Falha ao carregar organizacao.'))
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  // monta a associacao inicial de cada produto do arquivo
+  function buildLinks(rows: ParsedRow[]) {
+    const entries: Record<string, LinkEntry> = {}
+    rows.forEach((r) => {
+      let best: MenuItem | null = null
+      let bestScore = 0
+      menuItems.forEach((m) => {
+        const s = similar(r.product, m.name)
+        if (s > bestScore) {
+          bestScore = s
+          best = m
+        }
+      })
+      if (best && bestScore >= AUTO_OK) {
+        entries[r.product] = { menuItemId: best.id, auto: true, score: bestScore, create: false, newName: r.product }
+      } else if (best && bestScore >= SUGGEST_OK) {
+        entries[r.product] = { menuItemId: best.id, auto: false, score: bestScore, create: false, newName: r.product }
+      } else {
+        entries[r.product] = { menuItemId: '', auto: false, score: 0, create: false, newName: r.product }
+      }
+    })
+    return entries
+  }
+
+  function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const buffer = reader.result as ArrayBuffer
+      let rows: ParsedRow[] = []
+      try {
+        rows = isBinaryWorkbook(buffer) ? parseWorkbook(buffer) : parseCsv(new TextDecoder('utf-8').decode(buffer))
+      } catch {
+        setError('Nao foi possivel ler o arquivo. Salve como .xlsx ou .csv e tente novamente.')
+        return
+      }
+      if (!rows.length) {
+        setError('Nenhuma linha valida encontrada. O arquivo precisa ter as colunas produto, quantidade e total.')
+        return
+      }
+      const entries = buildLinks(rows)
+      setFileName(file.name)
+      setImportRows(rows)
+      setLinkEntries(entries)
+      setPendingProducts(rows.filter((r) => !entries[r.product].menuItemId).map((r) => r.product))
+      setModalQuery('')
+      setResultMsg(null)
+      setError(null)
+      setShowModal(true)
+    }
+    reader.onerror = () => setError('Falha ao abrir o arquivo.')
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  function cancelImport() {
+    setImportRows([])
+    setPendingProducts([])
+    setLinkEntries({})
+    setResultMsg(null)
+    setError(null)
+    setFileName('')
+    setShowModal(false)
+  }
+
+  function setEntry(product: string, patch: Partial<LinkEntry>) {
+    setLinkEntries((prev) => ({ ...prev, [product]: { ...prev[product], ...patch } }))
+  }
