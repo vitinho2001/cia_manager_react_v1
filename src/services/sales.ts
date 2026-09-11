@@ -8,12 +8,17 @@ export async function listSales(organizationId: string, from?: string, to?: stri
   if (to) q = q.lte('sale_date', to)
   const { data, error } = await q
   if (error) throw error
-  return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, quantity: Number(row.quantity), total_amount: Number(row.total_amount) })) as Sale[]
+  return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, quantity: Number(row.quantity), unit_price: Number(row.unit_price), total_amount: Number(row.total_amount) })) as Sale[]
+}
+
+function withUnitPrice(input: CreateSaleInput) {
+  const qty = input.quantity > 0 ? input.quantity : 1
+  return { ...input, quantity: qty, unit_price: Number((input.total_amount / qty).toFixed(4)) }
 }
 
 export async function createSale(input: CreateSaleInput) {
   if (!supabase) throw new Error('Supabase nao configurado.')
-  const { data, error } = await supabase.from('sales').insert(input).select().single()
+  const { data, error } = await supabase.from('sales').insert(withUnitPrice(input)).select().single()
   if (error) throw error
   return data as Sale
 }
@@ -21,7 +26,7 @@ export async function createSale(input: CreateSaleInput) {
 export async function createSales(inputs: CreateSaleInput[]) {
   if (!supabase) throw new Error('Supabase nao configurado.')
   if (inputs.length === 0) return []
-  const { data, error } = await supabase.from('sales').insert(inputs).select()
+  const { data, error } = await supabase.from('sales').insert(inputs.map(withUnitPrice)).select()
   if (error) throw error
   return (data ?? []) as Sale[]
 }
