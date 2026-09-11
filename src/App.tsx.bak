@@ -8,7 +8,6 @@ import { PlaceholderPage } from './pages/PlaceholderPage'
 import { IngredientsPage } from './pages/IngredientsPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { MenuPage } from './pages/MenuPage'
-import { SalesPage } from './pages/SalesPage'
 
 function RoutedApp() {
   const { user, loading, configured } = useAuth()
@@ -22,7 +21,7 @@ function RoutedApp() {
         <Route path="receitas" element={<RecipesPage />} />
         <Route path="insumos" element={<IngredientsPage />} />
         <Route path="custos" element={<PlaceholderPage title="Custos" description="Custos fixos, variáveis e importação de planilhas." />} />
-        <Route path="vendas" element={<SalesPage />} />
+        <Route path="vendas" element={<PlaceholderPage title="Vendas" description="Vendas por produto, canal e período." />} />
         <Route path="dre" element={<PlaceholderPage title="DRE" description="Demonstrativo calculado automaticamente." />} />
         <Route path="comparativo" element={<PlaceholderPage title="Comparativo" description="Análises mensais, trimestrais, semestrais e anuais." />} />
         <Route path="inteligencia" element={<PlaceholderPage title="Inteligência" description="Alertas, rankings e simulações." />} />
