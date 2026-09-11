@@ -104,7 +104,6 @@ function isBinaryWorkbook(buffer: ArrayBuffer) {
   const xls = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0xa1 && b[3] === 0xb1
   return zip || xls
 }
-
 export function SalesPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [sales, setSales] = useState<Sale[]>([])
@@ -240,7 +239,6 @@ export function SalesPage() {
     setError(null)
     setFileName('')
   }
-
   async function confirmImport() {
     if (!organizationId) return
     setImporting(true)
@@ -335,7 +333,6 @@ export function SalesPage() {
   }
 
   const boxBase = { borderRadius: 12, padding: '14px 16px', flex: '1 1 150px' }
-
   return (
     <div className="page-container">
       <PageHeader
@@ -365,83 +362,37 @@ export function SalesPage() {
       <section className="panel">
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
-            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.7 }}>
-              Vendas totais do dia
-            </span>
-            <strong style={{ display: 'block', fontSize: 28, marginTop: 6 }}>{brl(totals.total)}</strong>
-            <span style={{ display: 'block', fontSize: 12, marginTop: 4, opacity: 0.7 }}>
-              {totals.quantity} itens - {totals.priced} lancamento(s)
-            </span>
-          </div>
-          {CHANNELS.map((c) => (
-            <div key={c.value} style={{ ...boxBase, background: '#ffffff', border: '1px solid #e5e7eb' }}>
-              <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', color: '#6b7280' }}>
-                {c.label}
-              </span>
-              <strong style={{ display: 'block', fontSize: 20, marginTop: 6, color: '#111827' }}>
-                {brl(totals.byChannel[c.value])}
-              </strong>
-              <span style={{ display: 'block', fontSize: 12, marginTop: 4, color: '#9ca3af' }}>
-                {totals.qtyByChannel[c.value]} itens - {pct(totals.byChannel[c.value], totals.total)}% do total
-              </span>
-            </div>
-          ))}
+            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
+  return (
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Vendas"
+        title="Vendas"
+        description="Vendas por produto, canal e periodo."
+        actions={
+          <Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>
+            Atualizar
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="notice notice-error">
+          {error}
+          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
         </div>
-      </section>
+      )}
+      {resultMsg && (
+        <div className="notice">
+          {resultMsg}
+          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
+        </div>
+      )}
 
       <section className="panel">
-        <div className="table-toolbar">
-          <label className="month-control">
-            <CalendarDays size={16} />
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </label>
-          <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
-            {CHANNELS.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          <div className="search-box table-search">
-            <Search size={16} />
-            <input placeholder="Buscar em vendas" />
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.length === 0 ? (
-                <tr>
-                  <td colSpan={7}>
-                    <div className="empty-state">
-                      <h2>Nenhuma venda neste dia</h2>
-                      <p>Lance manualmente abaixo ou importe um arquivo.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : sales.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.sale_date}</td>
-                  <td>{s.menu_item?.name ?? '-'}</td>
-                  <td>{channelLabel(s.channel)}</td>
-                  <td>{s.quantity}</td>
-                  <td>{brl(Number(s.total_amount) || 0)}</td>
-                  <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
-                  <td>
-                    <button className="text-button" type="button" onClick={() => void removeSale(s.id)}>
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
+            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
       <section className="panel">
         <h2>Lancamento manual</h2>
         <form className="modal-card modal-wide" onSubmit={submitManual}>
@@ -456,4 +407,5 @@ export function SalesPage() {
           </label>
           <label>
             Quantidade
-            <input type="number" min="0" step="any" value={manualQty} onChange={(e) 
+            <input type="number" min="0" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} />
+          </label>
