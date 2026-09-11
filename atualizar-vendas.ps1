@@ -1,3 +1,8 @@
+$ErrorActionPreference = "Stop"
+cd "C:\Users\anabe\OneDrive\Documentos\Ana\cia_manager_react_v1"
+$enc = New-Object System.Text.UTF8Encoding($false)
+
+$page = @'
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import * as XLSX from 'xlsx'
 import { CalendarDays, FileUp, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
@@ -539,3 +544,11 @@ export function SalesPage() {
     </div>
   )
 }
+'@
+[System.IO.File]::WriteAllText("$PWD\src\pages\SalesPage.tsx", $page, $enc)
+
+Write-Host "Arquivo escrito. Enviando para o GitHub..." -ForegroundColor Cyan
+git add -A
+git commit -m "Importar xlsx e adicionar botao cancelar"
+git push origin main
+Read-Host "Concluido. Pressione Enter para fechar"
