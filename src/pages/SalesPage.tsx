@@ -142,10 +142,13 @@ export function SalesPage() {
       const res = await Promise.all([listSales(organizationId, date, date), listMenuItems(organizationId)])
       setSales(res[0])
       setMenuItems(res[1])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao carregar vendas.')
+     } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao importar vendas.')
     } finally {
-      setLoading(false)
+      setImporting(false)
     }
   }, [organizationId, date])
 
