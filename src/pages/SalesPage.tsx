@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import * as XLSX from 'xlsx'
-import { FileUp, Link2, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { FileUp, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { getCurrentOrganizationId } from '../services/organization'
 import { createMenuItem, listMenuItems } from '../services/menu'
-import { createSale, createSales, deleteSale, listSales, updateSale } from '../services/sales'
+import { deleteSalesByDate, createSale, createSales, deleteSale, listSales, updateSale } from '../services/sales'
 import type { MenuItem } from '../types/menu'
 import type { Sale, SaleChannel } from '../types/sales'
 
@@ -140,6 +140,7 @@ export function SalesPage() {
   const [sales, setSales] = useState<Sale[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [date, setDate] = useState(today())
+const [channelFilter, setChannelFilter] = useState<string>('all')
   const [channel, setChannel] = useState<SaleChannel>('counter')
   const [importChannel, setImportChannel] = useState<SaleChannel>('counter')
   const [loading, setLoading] = useState(false)
@@ -172,6 +173,11 @@ export function SalesPage() {
       setEditTotal(String(editingSale.total_amount ?? 0))
     }
   }, [editingSale])
+const filteredSales = useMemo(() => {
+if (channelFilter === 'all') return sales
+return sales.filter((s) => s.channel === channelFilter)
+}, [sales, channelFilter])
+
   const load = useCallback(async () => {
     if (!organizationId) return
     setLoading(true)
@@ -219,6 +225,39 @@ export function SalesPage() {
     })
     return entries
   }
+
+function exportXlsx() {
+const rows = filteredSales.map((s) => ({
+Data: s.sale_date,
+Item: s.menu_item?.name ?? '-',
+Canal: channelLabel(s.channel),
+Quantidade: Number(s.quantity) || 0,
+Total: Number(s.total_amount) || 0,
+Unitario: Number(s.total_amount) && Number(s.quantity) ? Number((Number(s.total_amount) / Number(s.quantity)).toFixed(2)) : 0,
+Origem: s.source === 'import' ? 'Importacao' : 'Manual',
+}))
+const ws = XLSX.utils.json_to_sheet(rows)
+const wb = XLSX.utils.book_new()
+XLSX.utils.book_append_sheet(wb, ws, 'Vendas')
+XLSX.writeFile(wb, 'vendas-' + date + '.xlsx')
+}
+
+async function deleteAllForDay() {
+if (!organizationId) return
+const ok = window.confirm('Excluir TODAS as vendas do dia ' + date + '? Esta acao nao pode ser desfeita.')
+if (!ok) return
+setLoading(true)
+setError(null)
+try {
+await deleteSalesByDate(organizationId, date)
+setResultMsg('Todas as vendas do dia ' + date + ' foram excluidas.')
+await load()
+} catch (err) {
+setError(err instanceof Error ? err.message : 'Falha ao excluir vendas.')
+} finally {
+setLoading(false)
+}
+}
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -495,6 +534,16 @@ export function SalesPage() {
               {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </label>
+<label>
+Filtro de canal
+<select className="select-control" value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
+<option value="all">Todos</option>
+{CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+</select>
+</label>
+<Button onClick={() => void exportXlsx()}>Exportar XLSX</Button>
+<Button onClick={() => void deleteAllForDay()} disabled={loading}>Excluir tudo</Button>
+
           <div className="search-box table-search"><Search size={16} /><input placeholder="Buscar em vendas" /></div>
         </div>
         <div className="table-wrap">
@@ -503,7 +552,7 @@ export function SalesPage() {
               <tr><th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th></tr>
             </thead>
             <tbody>
-              {sales.length === 0 ? (
+              {filteredSales.length === 0 ? (
                 <tr>
                   <td colSpan={7}>
                     <div className="empty-state">
@@ -512,7 +561,7 @@ export function SalesPage() {
                     </div>
                   </td>
                 </tr>
-              ) : sales.map((s) => (
+              ) : filteredSales.map((s) => (
                 <tr key={s.id}>
                   <td>{s.sale_date}</td>
                   <td>
@@ -525,7 +574,7 @@ export function SalesPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button type="button" className="icon-btn" title="Editar associacao" onClick={() => openEdit(s)}>
-                        <Link2 size={16} />
+                        <Pencil size={16} />
                       </button>
                       <button type="button" className="icon-btn" title="Excluir" onClick={() => void removeSale(s.id)}>
                         <Trash2 size={16} />
