@@ -7,6 +7,7 @@ export type MenuItem = {
   counter_price: number | null
   ifood_price: number | null
   bysell_price: number | null
+target_margin: number
   created_at: string
   updated_at: string
 }

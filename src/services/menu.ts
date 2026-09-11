@@ -7,6 +7,7 @@ function numericMenu(row: Record<string, unknown>): MenuItem {
     counter_price: row.counter_price == null ? null : Number(row.counter_price),
     ifood_price: row.ifood_price == null ? null : Number(row.ifood_price),
     bysell_price: row.bysell_price == null ? null : Number(row.bysell_price),
+    target_margin: row.target_margin == null ? 0.2 : Number(row.target_margin),
   } as MenuItem
 }
 
@@ -24,7 +25,7 @@ export async function listMenuComponents(organizationId: string) {
   return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, quantity: Number(row.quantity) })) as MenuItemComponent[]
 }
 
-export async function createMenuItem(input: { organizationId: string; name: string; category: string; counterPrice: number | null; ifoodPrice: number | null; bysellPrice: number | null; components: MenuComponentInput[] }) {
+export async function createMenuItem(input: { organizationId: string; name: string; category: string; counterPrice: number | null; ifoodPrice: number | null; bysellPrice: number | null; targetMargin?: number; components: MenuComponentInput[] }) {
   if (!supabase) throw new Error('Supabase não configurado.')
   const { data: item, error } = await supabase.from('menu_items').insert({
     organization_id: input.organizationId,
@@ -33,6 +34,7 @@ export async function createMenuItem(input: { organizationId: string; name: stri
     counter_price: input.counterPrice,
     ifood_price: input.ifoodPrice,
     bysell_price: input.bysellPrice,
+    target_margin: input.targetMargin ?? 0.2,
   }).select('*').single()
   if (error) throw error
   if (input.components.length) {
@@ -45,9 +47,9 @@ export async function createMenuItem(input: { organizationId: string; name: stri
   return numericMenu(item as Record<string, unknown>)
 }
 
-export async function updateMenuItem(input: { id: string; organizationId: string; name: string; category: string; counterPrice: number | null; ifoodPrice: number | null; bysellPrice: number | null; components: MenuComponentInput[] }) {
+export async function updateMenuItem(input: { id: string; organizationId: string; name: string; category: string; counterPrice: number | null; ifoodPrice: number | null; bysellPrice: number | null; targetMargin?: number; components: MenuComponentInput[] }) {
   if (!supabase) throw new Error('Supabase não configurado.')
-  const { error } = await supabase.from('menu_items').update({ name: input.name.trim(), category: input.category.trim(), counter_price: input.counterPrice, ifood_price: input.ifoodPrice, bysell_price: input.bysellPrice, updated_at: new Date().toISOString() }).eq('id', input.id)
+  const { error } = await supabase.from('menu_items').update({ name: input.name.trim(), category: input.category.trim(), counter_price: input.counterPrice, ifood_price: input.ifoodPrice, bysell_price: input.bysellPrice, target_margin: input.targetMargin ?? 0.2, updated_at: new Date().toISOString() }).eq('id', input.id)
   if (error) throw error
   const { error: deleteError } = await supabase.from('menu_item_components').delete().eq('menu_item_id', input.id)
   if (deleteError) throw deleteError
