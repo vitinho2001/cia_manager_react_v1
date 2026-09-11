@@ -8,12 +8,17 @@ export async function listSales(organizationId: string, from?: string, to?: stri
   if (to) q = q.lte('sale_date', to)
   const { data, error } = await q
   if (error) throw error
-  return (data ?? []).map((row: Record<string, unknown>) => ({ ...row, quantity: Number(row.quantity), unit_price: Number(row.unit_price), total_amount: Number(row.total_amount) })) as Sale[]
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    ...row,
+    quantity: Number(row.quantity),
+    unit_price: Number(row.unit_price),
+    total_amount: Number(row.total_amount),
+  })) as Sale[]
 }
 
 function withUnitPrice(input: CreateSaleInput) {
   const qty = input.quantity > 0 ? input.quantity : 1
-  return { ...input, quantity: qty, unit_price: Number((input.total_amount / qty).toFixed(4)) }
+  return { ...input, quantity: qty, unit_price: Number((input.total_amount / qty).toFixed(2)) }
 }
 
 export async function createSale(input: CreateSaleInput) {
