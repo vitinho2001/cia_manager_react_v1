@@ -41,3 +41,17 @@ export async function deleteSale(id: string) {
   const { error } = await supabase.from('sales').delete().eq('id', id)
   if (error) throw error
 }
+export async function updateSale(
+  id: string,
+  patch: { menu_item_id?: string; channel?: string; quantity?: number; total_amount?: number }
+) {
+  if (!supabase) throw new Error('Supabase nao configurado.')
+  const update: Record<string, unknown> = {}
+  if (patch.menu_item_id !== undefined) update.menu_item_id = patch.menu_item_id
+  if (patch.channel !== undefined) update.channel = patch.channel
+  if (patch.quantity !== undefined) update.quantity = patch.quantity
+  if (patch.total_amount !== undefined) update.total_amount = patch.total_amount
+  const { data, error } = await supabase.from('sales').update(update).eq('id', id).select().single()
+  if (error) throw error
+  return data as Sale
+}

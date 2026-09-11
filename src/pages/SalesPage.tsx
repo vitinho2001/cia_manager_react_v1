@@ -186,22 +186,23 @@ export function SalesPage() {
   useEffect(() => { void load() }, [load])
 
   // monta a associacao inicial de cada produto do arquivo
+   // monta a associacao inicial de cada produto do arquivo
   function buildLinks(rows: ParsedRow[]) {
     const entries: Record<string, LinkEntry> = {}
     rows.forEach((r) => {
-      let best: MenuItem | null = null
+      let bestId = ''
       let bestScore = 0
       menuItems.forEach((m) => {
         const s = similar(r.product, m.name)
         if (s > bestScore) {
           bestScore = s
-          best = m
+          bestId = m.id
         }
       })
-      if (best && bestScore >= AUTO_OK) {
-        entries[r.product] = { menuItemId: best.id, auto: true, score: bestScore, create: false, newName: r.product }
-      } else if (best && bestScore >= SUGGEST_OK) {
-        entries[r.product] = { menuItemId: best.id, auto: false, score: bestScore, create: false, newName: r.product }
+      if (bestId && bestScore >= AUTO_OK) {
+        entries[r.product] = { menuItemId: bestId, auto: true, score: bestScore, create: false, newName: r.product }
+      } else if (bestId && bestScore >= SUGGEST_OK) {
+        entries[r.product] = { menuItemId: bestId, auto: false, score: bestScore, create: false, newName: r.product }
       } else {
         entries[r.product] = { menuItemId: '', auto: false, score: 0, create: false, newName: r.product }
       }
