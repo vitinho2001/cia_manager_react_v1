@@ -16,23 +16,16 @@ const CHANNELS: { value: SaleChannel; label: string }[] = [
   { value: 'other', label: 'Outros' },
 ]
 
-function channelLabel(value: SaleChannel) {
-  for (const c of CHANNELS) if (c.value === value) return c.label
-  return value
+const channelLabel = (v: SaleChannel) => {
+  for (const c of CHANNELS) if (c.value === v) return c.label
+  return v
 }
 
-function brl(value: number) {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-}
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-function pct(part: number, whole: number) {
-  if (!whole) return 0
-  return Math.round((part / whole) * 1000) / 10
-}
+const pct = (p: number, w: number) => (w ? Math.round((p / w) * 1000) / 10 : 0)
 
-function normalize(value: string) {
-  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
-}
+const normalize = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
 
 function today() {
   const d = new Date()
@@ -46,29 +39,26 @@ type ParsedRow = { product: string; quantity: number; total: number }
 function toNumber(value: unknown): number {
   if (value == null) return 0
   if (typeof value === 'number') return isNaN(value) ? 0 : value
-  const raw = String(value).trim()
+  const raw = String(value).trim().replace(/\s/g, '').replace(/R\$/g, '')
   if (!raw) return 0
-  const cleaned = raw.replace(/\s/g, '').replace(/R\$/g, '')
-  const normalized = cleaned.indexOf(',') >= 0 ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned
-  const n = parseFloat(normalized)
+  const s = raw.indexOf(',') >= 0 ? raw.replace(/\./g, '').replace(',', '.') : raw
+  const n = parseFloat(s)
   return isNaN(n) ? 0 : n
 }
 
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
-  if (lines.length === 0) return []
+  if (!lines.length) return []
   const sep = lines[0].indexOf(';') >= 0 ? ';' : ','
   const rows: ParsedRow[] = []
-  lines.forEach((line, idx) => {
-    const cols = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''))
-    if (idx === 0 && /produto|item|nome|descricao/i.test(cols[0] ?? '')) return
-    const product = cols[0] ?? ''
-    if (!product) return
-    rows.push({ product, quantity: toNumber(cols[1]) || 1, total: toNumber(cols[2]) })
+  lines.forEach((line, i) => {
+    const c = line.split(sep).map((x) => x.trim().replace(/^"|"$/g, ''))
+    if (i === 0 && /produto|item|nome|descricao/i.test(c[0] ?? '')) return
+    if (!c[0]) return
+    rows.push({ product: c[0], quantity: toNumber(c[1]) || 1, total: toNumber(c[2]) })
   })
   return rows
 }
-
 function parseWorkbook(buffer: ArrayBuffer): ParsedRow[] {
   const wb = XLSX.read(buffer, { type: 'array' })
   const rows: ParsedRow[] = []
@@ -78,13 +68,13 @@ function parseWorkbook(buffer: ArrayBuffer): ParsedRow[] {
     const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
     json.forEach((row) => {
       const keys = Object.keys(row)
-      if (keys.length === 0) return
-      const pick = (candidates: string[], index: number) => {
-        for (const c of candidates) {
+      if (!keys.length) return
+      const pick = (cands: string[], idx: number) => {
+        for (const c of cands) {
           const found = keys.filter((k) => normalize(k) === c)[0]
           if (found) return row[found]
         }
-        return keys[index] ? row[keys[index]] : ''
+        return keys[idx] ? row[keys[idx]] : ''
       }
       const product = String(pick(['produto', 'item', 'nome', 'descricao'], 0) ?? '').trim()
       if (!product) return
@@ -104,6 +94,7 @@ function isBinaryWorkbook(buffer: ArrayBuffer) {
   const xls = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0xa1 && b[3] === 0xb1
   return zip || xls
 }
+
 export function SalesPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [sales, setSales] = useState<Sale[]>([])
@@ -143,7 +134,6 @@ export function SalesPage() {
     })
     return { total, quantity, priced: sales.length, byChannel, qtyByChannel }
   }, [sales])
-
   const load = useCallback(async () => {
     if (!organizationId) return
     setLoading(true)
@@ -362,37 +352,83 @@ export function SalesPage() {
       <section className="panel">
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
-            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
-  return (
-    <div className="page-container">
-      <PageHeader
-        eyebrow="Vendas"
-        title="Vendas"
-        description="Vendas por produto, canal e periodo."
-        actions={
-          <Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>
-            Atualizar
-          </Button>
-        }
-      />
-
-      {error && (
-        <div className="notice notice-error">
-          {error}
-          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
+            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', opacity: 0.7 }}>
+              Vendas totais do dia
+            </span>
+            <strong style={{ display: 'block', fontSize: 28, marginTop: 6 }}>{brl(totals.total)}</strong>
+            <span style={{ display: 'block', fontSize: 12, marginTop: 4, opacity: 0.7 }}>
+              {totals.quantity} itens - {totals.priced} lancamento(s)
+            </span>
+          </div>
+          {CHANNELS.map((c) => (
+            <div key={c.value} style={{ ...boxBase, background: '#ffffff', border: '1px solid #e5e7eb' }}>
+              <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase', color: '#6b7280' }}>
+                {c.label}
+              </span>
+              <strong style={{ display: 'block', fontSize: 20, marginTop: 6, color: '#111827' }}>
+                {brl(totals.byChannel[c.value])}
+              </strong>
+              <span style={{ display: 'block', fontSize: 12, marginTop: 4, color: '#9ca3af' }}>
+                {totals.qtyByChannel[c.value]} itens - {pct(totals.byChannel[c.value], totals.total)}% do total
+              </span>
+            </div>
+          ))}
         </div>
-      )}
-      {resultMsg && (
-        <div className="notice">
-          {resultMsg}
-          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
-        </div>
-      )}
+      </section>
 
       <section className="panel">
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
-            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
+        <div className="table-toolbar">
+          <label className="month-control">
+            <CalendarDays size={16} />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+          <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+            {CHANNELS.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+          <div className="search-box table-search">
+            <Search size={16} />
+            <input placeholder="Buscar em vendas" />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sales.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">
+                      <h2>Nenhuma venda neste dia</h2>
+                      <p>Lance manualmente abaixo ou importe um arquivo.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : sales.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.sale_date}</td>
+                  <td>{s.menu_item?.name ?? '-'}</td>
+                  <td>{channelLabel(s.channel)}</td>
+                  <td>{s.quantity}</td>
+                  <td>{brl(Number(s.total_amount) || 0)}</td>
+                  <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
+                  <td>
+                    <button className="text-button" type="button" onClick={() => void removeSale(s.id)}>
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="panel">
         <h2>Lancamento manual</h2>
         <form className="modal-card modal-wide" onSubmit={submitManual}>
@@ -408,4 +444,96 @@ export function SalesPage() {
           <label>
             Quantidade
             <input type="number" min="0" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} />
-          </label>
+          </label>
+          <label>
+            Total (R$)
+            <input type="number" min="0" step="any" value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} required />
+          </label>
+          <Button icon={<Plus size={16} />}>Lancar venda</Button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>Importar CSV ou Excel</h2>
+        <p>
+          O arquivo precisa ter as colunas <strong>produto</strong>, <strong>quantidade</strong> e <strong>total</strong>.
+          Aceita .csv, .xlsx e .xls. Escolha o canal da importacao antes de importar.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          <label className="month-control">
+            Canal da importacao
+            <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="file-input">
+          <FileUp size={16} />
+          <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFile} />
+        </label>
+        {importRows.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+            <p style={{ margin: 0 }}>
+              <strong>{importRows.length}</strong> linha(s) lida(s){fileName ? ' de ' + fileName : ''}.
+            </p>
+            <Button onClick={() => void confirmImport()} disabled={importing}>
+              Importar {importRows.length} venda(s)
+            </Button>
+            <Button onClick={cancelImport} disabled={importing}>
+              Cancelar importacao
+            </Button>
+          </div>
+        )}
+      </section>
+
+      {pendingRows.length > 0 && (
+        <div className="modal-overlay">
+          <div className="modal-card modal-wide">
+            <div className="modal-header">
+              <h2>Vincular itens ao cardapio</h2>
+              <button className="modal-close" type="button" onClick={cancelImport}><X size={18} /></button>
+            </div>
+            <p>
+              Estes produtos do arquivo nao foram encontrados no cardapio. Vincule a um item existente,
+              crie um novo item, ou deixe sem link (a linha sera ignorada com aviso).
+            </p>
+            {pendingRows.map((r) => (
+              <div key={r.product} className="modal-row">
+                <div>
+                  <strong>{r.product}</strong>
+                  <span>qtd {r.quantity} - total {brl(r.total)}</span>
+                </div>
+                <select
+                  className="select-control"
+                  value={linkMap[r.product] ?? ''}
+                  onChange={(e) => setLinkMap({ ...linkMap, [r.product]: e.target.value })}
+                >
+                  <option value="">- deixar sem link (ignorar) -</option>
+                  <option value="__create__">Criar novo item no cardapio</option>
+                  {menuItems.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                {linkMap[r.product] === '__create__' && (
+                  <input
+                    className="input-control"
+                    value={createNames[r.product] ?? r.product}
+                    onChange={(e) => setCreateNames({ ...createNames, [r.product]: e.target.value })}
+                  />
+                )}
+              </div>
+            ))}
+            <div className="modal-actions">
+              <Button onClick={() => void confirmImport()} disabled={importing}>
+                {importing ? 'Importando...' : 'Confirmar importacao'}
+              </Button>
+              <Button onClick={cancelImport} disabled={importing}>Cancelar</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
