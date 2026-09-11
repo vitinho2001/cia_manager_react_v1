@@ -1,0 +1,106 @@
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
+import { CalendarDays, FileUp, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Button } from '../components/Button'
+import { PageHeader } from '../components/PageHeader'
+import { getCurrentOrganizationId } from '../services/organization'
+import { createMenuItem, listMenuItems } from '../services/menu'
+import { createSale, createSales, deleteSale, listSales } from '../services/sales'
+import type { MenuItem } from '../types/menu'
+import type { Sale, SaleChannel } from '../types/sales'
+
+const CHANNELS: { value: SaleChannel; label: string }[] = [
+  { value: 'counter', label: 'Balcao' },
+  { value: 'ifood', label: 'iFood' },
+  { value: 'bysell', label: 'BySell' },
+  { value: 'other', label: 'Outros' },
+]
+
+function channelLabel(value: SaleChannel) {
+  for (const c of CHANNELS) if (c.value === value) return c.label
+  return value
+}
+
+function brl(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function pct(part: number, whole: number) {
+  if (!whole) return 0
+  return Math.round((part / whole) * 1000) / 10
+}
+
+function normalize(value: string) {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+}
+
+function today() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return d.getFullYear() + '-' + m + '-' + day
+}
+
+type ParsedRow = { product: string; quantity: number; total: number }
+
+function toNumber(value: unknown): number {
+  if (value == null) return 0
+  if (typeof value === 'number') return isNaN(value) ? 0 : value
+  const raw = String(value).trim()
+  if (!raw) return 0
+  const cleaned = raw.replace(/\s/g, '').replace(/R\$/g, '')
+  const normalized = cleaned.indexOf(',') >= 0 ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned
+  const n = parseFloat(normalized)
+  return isNaN(n) ? 0 : n
+}
+
+function parseCsv(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (lines.length === 0) return []
+  const sep = lines[0].indexOf(';') >= 0 ? ';' : ','
+  const rows: ParsedRow[] = []
+  lines.forEach((line, idx) => {
+    const cols = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''))
+    if (idx === 0 && /produto|item|nome|descricao/i.test(cols[0] ?? '')) return
+    const product = cols[0] ?? ''
+    if (!product) return
+    rows.push({ product, quantity: toNumber(cols[1]) || 1, total: toNumber(cols[2]) })
+  })
+  return rows
+}
+
+function parseWorkbook(buffer: ArrayBuffer): ParsedRow[] {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const rows: ParsedRow[] = []
+  wb.SheetNames.forEach((name) => {
+    const sheet = wb.Sheets[name]
+    if (!sheet) return
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+    json.forEach((row) => {
+      const keys = Object.keys(row)
+      if (keys.length === 0) return
+      const pick = (candidates: string[], index: number) => {
+        for (const c of candidates) {
+          const found = keys.filter((k) => normalize(k) === c)[0]
+          if (found) return row[found]
+        }
+        return keys[index] ? row[keys[index]] : ''
+      }
+      const product = String(pick(['produto', 'item', 'nome', 'descricao'], 0) ?? '').trim()
+      if (!product) return
+      rows.push({
+        product,
+        quantity: toNumber(pick(['quantidade', 'qtd', 'qtde'], 1)) || 1,
+        total: toNumber(pick(['total', 'valor', 'valor total', 'receita'], 2)),
+      })
+    })
+  })
+  return rows
+}
+
+function isBinaryWorkbook(buffer: ArrayBuffer) {
+  const b = new Uint8Array(buffer.slice(0, 8))
+  const zip = b[0] === 0x50 && b[1] === 0x4b
+  const xls = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0xa1 && b[3] === 0xb1
+  return zip || xls
+}

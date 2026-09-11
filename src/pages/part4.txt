@@ -1,0 +1,61 @@
+
+  return (
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Vendas"
+        title="Vendas"
+        description="Vendas por produto, canal e periodo."
+        actions={
+          <Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>
+            Atualizar
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="notice notice-error">
+          {error}
+          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
+        </div>
+      )}
+      {resultMsg && (
+        <div className="notice">
+          {resultMsg}
+          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      <section className="panel">
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
+            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
+  return (
+    <div className="page-container">
+      <PageHeader
+        eyebrow="Vendas"
+        title="Vendas"
+        description="Vendas por produto, canal e periodo."
+        actions={
+          <Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>
+            Atualizar
+          </Button>
+        }
+      />
+
+      {error && (
+        <div className="notice notice-error">
+          {error}
+          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
+        </div>
+      )}
+      {resultMsg && (
+        <div className="notice">
+          {resultMsg}
+          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      <section className="panel">
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ ...boxBase, background: '#111827', color: '#ffffff', flex: '1 1 220px' }}>
+            <span style={{ display: 'block', fontSize: 12, letterSpacing: 0.5, textTransform:
