@@ -3,8 +3,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { defaultMenuRows } from '../data/defaultMenu'
-import { listBusinessSettings, updateBusinessSettings } from '../services/settings'
-import type { BusinessSettings } from '../types/settings'
 import { getCurrentOrganizationId } from '../services/organization'
 import { listIngredients, listPurchases } from '../services/ingredients'
 import { listRecipeItems, listRecipes } from '../services/recipes'
@@ -22,16 +20,6 @@ type Draft = { name: string; category: string; counterPrice: string; ifoodPrice:
 
 const emptyDraft: Draft = { name: '', category: '', counterPrice: '', ifoodPrice: '', bysellPrice: '', components: [] }
 
-function pctInput(value: number) {
-  return String(Math.round((value || 0) * 10000) / 100)
-}
-function parsePct(text: string) {
-  const n = Number(String(text).replace(',', '.'))
-  return Number.isFinite(n) ? n / 100 : 0
-}
-function pctLabel(value: number | null) {
-  return value == null ? '-' : (value * 100).toFixed(1).replace('.', ',') + '%'
-}
 function parseNumber(value: string) {
   const text = value.trim()
   if (!text) return Number.NaN
@@ -97,13 +85,6 @@ export function MenuPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [saving, setSaving] = useState(false)
   const [seeding, setSeeding] = useState(false)
-const [settings, setSettings] = useState<BusinessSettings | null>(null)
-const [feeCounter, setFeeCounter] = useState('0')
-const [feeIfood, setFeeIfood] = useState('0')
-const [feeBysell, setFeeBysell] = useState('0')
-const [margin, setMargin] = useState('20')
-const [savingSettings, setSavingSettings] = useState(false)
-const [notice, setNotice] = useState<string | null>(null)
 
   async function load(targetMonth = month) {
     setLoading(true); setError(null)
@@ -115,12 +96,6 @@ const [notice, setNotice] = useState<string | null>(null)
         listMenuItems(orgId), listMenuComponents(orgId), listRecipes(orgId), listRecipeItems(orgId), listIngredients(orgId), listPurchases(orgId, bounds.start, bounds.end),
       ])
       setItems(menuData); setComponents(componentData); setRecipes(recipeData); setRecipeItems(recipeItemData); setIngredients(ingredientData); setPurchases(purchaseData)
-const settingsData = await listBusinessSettings(orgId)
-setSettings(settingsData)
-setFeeCounter(pctInput(settingsData.counter_fee))
-setFeeIfood(pctInput(settingsData.ifood_fee))
-setFeeBysell(pctInput(settingsData.bysell_fee))
-setMargin(pctInput(settingsData.target_net_margin))
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o cardápio.') }
     finally { setLoading(false) }
   }
@@ -229,82 +204,15 @@ setMargin(pctInput(settingsData.target_net_margin))
     return { total, incomplete }
   }, [draft.components, recipeCostById, ingredientMap, averageByIngredient])
 
-    const fees = useMemo(() => ({
-    counter: settings?.counter_fee ?? 0,
-    bysell: settings?.bysell_fee ?? 0,
-    ifood: settings?.ifood_fee ?? 0,
-    margin: settings?.target_net_margin ?? 0.2,
-  }), [settings])
-
-  function suggestFromCost(cost: number) {
-    const make = (fee: number) => {
-      const denom = 1 - fee - fees.margin
-      if (!(cost > 0) || !(denom > 0)) return null
-      return cost / denom
-    }
-    return { counter: make(fees.counter), bysell: make(fees.bysell), ifood: make(fees.ifood) }
-  }
-
-  function channelPreview(cost: number, fee: number) {
-    if (!(cost > 0)) return null
-    const denom = 1 - fee - fees.margin
-    if (!(denom > 0)) return null
-    const suggested = cost / denom
-    const net = suggested * (1 - fee)
-    const profit = net - cost
-    return { suggested, net, profit, pct: net > 0 ? profit / net : null }
-  }
-
-  async function saveSettings() {
-    if (!organizationId) return
-    setSavingSettings(true)
-    setError(null)
-    try {
-      const next = await updateBusinessSettings(organizationId, {
-        counter_fee: parsePct(feeCounter),
-        bysell_fee: parsePct(feeBysell),
-        ifood_fee: parsePct(feeIfood),
-        target_net_margin: parsePct(margin),
-      })
-      setSettings(next)
-      setFeeCounter(pctInput(next.counter_fee))
-      setFeeIfood(pctInput(next.ifood_fee))
-      setFeeBysell(pctInput(next.bysell_fee))
-      setMargin(pctInput(next.target_net_margin))
-      setNotice('Taxas salvas.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao salvar taxas.')
-    } finally {
-      setSavingSettings(false)
-    }
-  }
-
-return <div className="page-stack">
+  return <div className="page-stack">
     <PageHeader eyebrow="Engenharia de cardápio" title="Cardápio" description="Vincule cada produto a receitas e/ou insumos diretos e acompanhe o custo unitário por mês." actions={<Button onClick={openNew} icon={<Plus size={17}/>}>Novo item</Button>} />
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div style={{ fontWeight: 600, fontSize: 15 }}>Taxas dos canais e margem alvo</div>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>Balcao (%)<input inputMode="decimal" value={feeCounter} onChange={(e) => setFeeCounter(e.target.value)} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>BySell (%)<input inputMode="decimal" value={feeBysell} onChange={(e) => setFeeBysell(e.target.value)} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>iFood (%)<input inputMode="decimal" value={feeIfood} onChange={(e) => setFeeIfood(e.target.value)} /></label>
-        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 12, color: '#6b7280', gap: 4 }}>Margem alvo (%)<input inputMode="decimal" value={margin} onChange={(e) => setMargin(e.target.value)} /></label>
-        <Button onClick={() => void saveSettings()} disabled={savingSettings}>{savingSettings ? 'Salvando...' : 'Salvar taxas'}</Button>
-        {notice && <span style={{ color: '#059669', fontSize: 13, marginLeft: 8 }}>{notice}</span>}
-        <div style={{ width: '100%', fontSize: 12, color: '#9ca3af' }}>Preco sugerido = custo / (1 - taxa - margem). A % de lucro e a margem liquida sobre o preco de venda (ja com a taxa descontada).</div>
-      </div>
     {error && <div className="notice notice-error">{error}<button type="button" onClick={() => setError(null)}><X size={16}/></button></div>}
     <section className="content-card menu-toolbar-card">
       <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
     </section>
-    {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span><span>Sug. Balcao<strong>{money(suggestFromCost(cost.total).counter)}</strong></span><span>Sug. BySell<strong>{money(suggestFromCost(cost.total).bysell)}</strong></span><span>Sug. iFood<strong>{money(suggestFromCost(cost.total).ifood)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
+    {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
 
     {modalOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setModalOpen(false) }}><form className="modal-card modal-wide menu-modal" onSubmit={submit}><button className="modal-close" type="button" onClick={() => setModalOpen(false)}><X size={18}/></button><h2>{editing ? 'Editar item do cardápio' : 'Novo item do cardápio'}</h2><p className="modal-description">Um item pode combinar quantas receitas e insumos diretos forem necessários.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>Custo direto<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(draftCost.total)}</strong></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>Balcao<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).counter)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.counter)?.pct ?? null)} de lucro</span></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>BySell<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).bysell)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.bysell)?.pct ?? null)} de lucro</span></div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>iFood<strong style={{ display: 'block', fontSize: 16, color: '#111827' }}>{money(suggestFromCost(draftCost.total).ifood)}</strong><span style={{ color: '#059669' }}>{pctLabel(channelPreview(draftCost.total, fees.ifood)?.pct ?? null)} de lucro</span></div>
-      </div>
       <div className="form-grid"><label>Nome<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Ex.: Jantinha 1"/></label><label>Categoria<input list="menu-categories" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="Ex.: Executivos — Jantinhas"/><datalist id="menu-categories">{categories.filter((c) => c !== 'Todas').map((c) => <option key={c} value={c}/>)}</datalist></label><label>Preço balcão<input inputMode="decimal" value={draft.counterPrice} onChange={(e) => setDraft({ ...draft, counterPrice: e.target.value })} placeholder="0,00"/></label><label>Preço iFood<input inputMode="decimal" value={draft.ifoodPrice} onChange={(e) => setDraft({ ...draft, ifoodPrice: e.target.value })} placeholder="0,00"/></label><label>Preço BySell<input inputMode="decimal" value={draft.bysellPrice} onChange={(e) => setDraft({ ...draft, bysellPrice: e.target.value })} placeholder="0,00"/></label></div>
       <div className="recipe-editor-heading"><div><span className="eyebrow">Composição</span><h3>Receitas e insumos</h3></div><div className="button-cluster"><Button type="button" variant="secondary" onClick={() => setDraft({ ...draft, components: [...draft.components, newComponent('recipe', recipes[0]?.id ?? '', 'porção')] })} icon={<BookOpen size={16}/>}>Adicionar receita</Button><Button type="button" variant="secondary" onClick={() => setDraft({ ...draft, components: [...draft.components, newComponent('ingredient', ingredients[0]?.id ?? '', ingredients[0]?.purchase_unit ?? 'un')] })} icon={<Boxes size={16}/>}>Adicionar insumo</Button></div></div>
       {!draft.components.length ? <div className="empty-state compact"><p>Este item ainda não possui composição. Bebidas prontas normalmente usam um insumo direto; pratos e caldos usam uma ou mais receitas.</p></div> : <div className="menu-component-editor">{draft.components.map((component) => { const recipe = component.type === 'recipe' ? recipeMap.get(component.targetId) : null; const ingredient = component.type === 'ingredient' ? ingredientMap.get(component.targetId) : null; const result = componentCost(component); return <div className="menu-component-row" key={component.key}><div className={`component-type-badge ${component.type}`} >{component.type === 'recipe' ? <BookOpen size={15}/> : <Boxes size={15}/>} {component.type === 'recipe' ? 'Receita' : 'Insumo'}</div><label>Componente<select value={component.targetId} onChange={(e) => { const nextIngredient = component.type === 'ingredient' ? ingredientMap.get(e.target.value) : null; updateComponent(component.key, { targetId: e.target.value, unit: nextIngredient?.purchase_unit ?? component.unit }) }}><option value="">Selecione</option>{component.type === 'recipe' ? recipes.map((row) => <option key={row.id} value={row.id}>{row.name}</option>) : ingredients.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><small>{recipe ? `1 ${recipe.yield_unit.replace(/s$/, '')}` : ingredient ? `Compra em ${ingredient.purchase_unit}` : '—'}</small></label><label>Quantidade<input inputMode="decimal" value={component.quantity} onChange={(e) => updateComponent(component.key, { quantity: e.target.value })}/></label>{component.type === 'ingredient' ? <label>Unidade<select value={component.unit} onChange={(e) => updateComponent(component.key, { unit: e.target.value })}>{directUnits.map((unit) => <option key={unit}>{unit}</option>)}</select></label> : <div className="automatic-conversion">Porção da receita</div>}<div className="recipe-item-cost"><small>{result.incomplete ? 'Custo incompleto' : 'Custo calculado'}</small><strong>{money(result.cost)}</strong></div><button type="button" className="icon-action danger" onClick={() => setDraft({ ...draft, components: draft.components.filter((row) => row.key !== component.key) })}><Trash2 size={15}/></button></div>})}</div>}
