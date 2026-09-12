@@ -441,7 +441,6 @@ setEditChannel(sale.channel)
 setEditQty(String(sale.quantity ?? 1))
 setEditTotal(String(sale.total_amount ?? 0))
 
-setEditChannel(sale.channel)
 setEditQty(String(sale.quantity ?? 1))
 setEditTotal(String(sale.total_amount ?? 0))
 
@@ -723,8 +722,8 @@ Canal
       )}
       {/* Modal de edicao da associacao (pos-importacao) */}
       {editingSale && (
-        <div className="modal-overlay">
-          <div className="modal">
+        <div className="modal-backdrop">
+          <div className="modal-card modal-wide">
             <div className="modal-header">
               <h3>Editar associacao</h3>
               <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>

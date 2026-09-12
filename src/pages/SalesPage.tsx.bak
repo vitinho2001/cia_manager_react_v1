@@ -642,8 +642,8 @@ Canal
       </section>
       {/* Modal de vinculacao dos produtos importados */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal">
+        <div className="modal-backdrop">
+          <div className="modal-card modal-wide">
             <div className="modal-header">
               <h3>Vincular itens ao cardapio</h3>
               <button type="button" className="icon-btn" onClick={cancelImport}><X size={16} /></button>
