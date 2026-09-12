@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Coins, Package, PackageSearch, Plus, RefreshCw, TrendingUp, X } from 'lucide-react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
@@ -62,7 +62,8 @@ export function EstoquePage() {
     } finally { setLoading(false) }
   }
 
-  const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents, recipeItems, sales, adjustments), [ingredients, purchases, menuComponents, recipeItems, sales, adjustments])
+  useEffect(() => { void load() }, [])
+const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents, recipeItems, sales, adjustments), [ingredients, purchases, menuComponents, recipeItems, sales, adjustments])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
