@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, BrainCircuit, ClipboardList, LayoutDashboard, LogOut, Menu, PackageOpen, ReceiptText, Search, ShoppingCart, UtensilsCrossed, X } from 'lucide-react'
+import { BarChart3, BookOpen, BrainCircuit, ClipboardList, LayoutDashboard, LogOut, Menu, PackageOpen, PackageSearch, ReceiptText, Search, ShoppingCart, UtensilsCrossed, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -8,6 +8,7 @@ const navigation = [
   { to: '/cardapio', label: 'Cardápio', icon: UtensilsCrossed },
   { to: '/receitas', label: 'Receitas', icon: BookOpen },
   { to: '/insumos', label: 'Insumos', icon: PackageOpen },
+{ to: '/estoque', label: 'Estoque', icon: PackageSearch },
   { to: '/custos', label: 'Custos', icon: ReceiptText },
   { to: '/vendas', label: 'Vendas', icon: ShoppingCart },
   { to: '/dre', label: 'DRE', icon: ClipboardList },

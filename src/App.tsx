@@ -8,6 +8,7 @@ import { PlaceholderPage } from './pages/PlaceholderPage'
 import { IngredientsPage } from './pages/IngredientsPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { MenuPage } from './pages/MenuPage'
+import { EstoquePage } from './pages/EstoquePage'
 import { SalesPage } from './pages/SalesPage'
 
 function RoutedApp() {
@@ -21,6 +22,7 @@ function RoutedApp() {
         <Route path="cardapio" element={<MenuPage />} />
         <Route path="receitas" element={<RecipesPage />} />
         <Route path="insumos" element={<IngredientsPage />} />
+<Route path="estoque" element={<EstoquePage />} />
         <Route path="custos" element={<PlaceholderPage title="Custos" description="Custos fixos, variáveis e importação de planilhas." />} />
         <Route path="vendas" element={<SalesPage />} />
         <Route path="dre" element={<PlaceholderPage title="DRE" description="Demonstrativo calculado automaticamente." />} />
