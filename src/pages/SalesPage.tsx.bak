@@ -392,7 +392,7 @@ setLoading(false)
       await createSale({
         sale_date: date, organization_id: organizationId,
         menu_item_id: manualItemId,
-        channel: channelFilter === 'all' ? 'counter' : channelFilter,
+        channel: (channelFilter === 'all' ? 'counter' : channelFilter) as SaleChannel,
         quantity: Number(manualQty) || 1,
         total_amount: Number(manualTotal) || 0,
         source: 'manual',
