@@ -437,6 +437,10 @@ setLoading(false)
     setEditingSale(sale)
     setEditItemId(sale.menu_item_id)
     setEditQuery('')
+setEditChannel(sale.channel)
+setEditQty(String(sale.quantity ?? 1))
+setEditTotal(String(sale.total_amount ?? 0))
+
   }
 
   async function saveEdit() {
@@ -573,7 +577,7 @@ Filtro de canal
                   <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="icon-btn" title="Editar associacao" onClick={() => openEdit(s)}>
+                      <button type="button" className="icon-btn" title="Editar associacao" onClick={() => void openEdit(s)}>
                         <Pencil size={16} />
                       </button>
                       <button type="button" className="icon-btn" title="Excluir" onClick={() => void removeSale(s.id)}>
