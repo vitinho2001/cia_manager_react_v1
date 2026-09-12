@@ -63,6 +63,7 @@ export function EstoquePage() {
   }
 
   useEffect(() => { void load() }, [])
+useEffect(() => { void load() }, [])
 const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents, recipeItems, sales, adjustments), [ingredients, purchases, menuComponents, recipeItems, sales, adjustments])
 
   const filtered = useMemo(() => {
