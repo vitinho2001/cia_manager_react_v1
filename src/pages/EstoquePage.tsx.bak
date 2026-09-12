@@ -102,13 +102,13 @@ export function EstoquePage() {
 
   return (
     <div>
-      <PageHeader eyebrow="Engenharia de custos" title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<><Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw size={16}/> Atualizar</Button><Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button></></>} />
+      <PageHeader eyebrow="Engenharia de custos" title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button>} />
 
       <div className="stat-grid">
-        <StatCard icon={Package} label="Insumos" value={String(lines.length)} detail="cadastrados" />
-        <StatCard icon={Coins} label="Valor em estoque" value={brl(totalValue)} detail="saldo x custo medio" />
-        <StatCard icon={TrendingUp} label="Sem receita" value={String(withoutRecipe)} detail="nao baixam estoque" />
-        <StatCard icon={AlertTriangle} label="Saldo zero/negativo" value={String(lowStock)} detail="atencao" />
+        <StatCard icon={<Package size={20}/>} label="Insumos" value={String(lines.length)} detail="cadastrados" />
+        <StatCard icon={<Coins size={20}/>} label="Valor em estoque" value={brl(totalValue)} detail="saldo x custo medio" />
+        <StatCard icon={<TrendingUp size={20}/>} label="Sem receita" value={String(withoutRecipe)} detail="nao baixam estoque" />
+        <StatCard icon={<AlertTriangle size={20}/>} label="Saldo zero/negativo" value={String(lowStock)} detail="atencao" />
       </div>
 
       <div className="table-toolbar">

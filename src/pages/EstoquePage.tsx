@@ -46,14 +46,14 @@ export function EstoquePage() {
       const orgId = organizationId ?? await getCurrentOrganizationId()
       setOrganizationId(orgId)
       const [ingRows, purRows, menuRows, compRows, recRows, recItemRows, saleRows, adjRows] = await Promise.all([
-        listIngredients(orgId),
-        listPurchases(orgId),
-        listMenuItems(orgId),
-        listMenuComponents(orgId),
-        listRecipes(orgId),
-        listRecipeItems(orgId),
-        listSales(orgId),
-        listStockAdjustments(orgId),
+        listIngredients(orgId).catch((e) => { console.error('ingredientes', e); return [] }),
+        listPurchases(orgId).catch((e) => { console.error('compras', e); return [] }),
+        listMenuItems(orgId).catch((e) => { console.error('cardapio', e); return [] }),
+        listMenuComponents(orgId).catch((e) => { console.error('componentes', e); return [] }),
+        listRecipes(orgId).catch((e) => { console.error('receitas', e); return [] }),
+        listRecipeItems(orgId).catch((e) => { console.error('itens receita', e); return [] }),
+        listSales(orgId).catch((e) => { console.error('vendas', e); return [] }),
+        listStockAdjustments(orgId).catch((e) => { console.error('ajustes', e); return [] }),
       ])
       setIngredients(ingRows); setPurchases(purRows); setMenuItems(menuRows); setMenuComponents(compRows)
       setRecipes(recRows); setRecipeItems(recItemRows); setSales(saleRows); setAdjustments(adjRows)
