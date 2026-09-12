@@ -392,7 +392,7 @@ setLoading(false)
       await createSale({
         sale_date: date, organization_id: organizationId,
         menu_item_id: manualItemId,
-        channel,
+        channel: (channelFilter === 'all' ? 'counter' : channelFilter) as SaleChannel,
         quantity: Number(manualQty) || 1,
         total_amount: Number(manualTotal) || 0,
         source: 'manual',
@@ -437,6 +437,10 @@ setLoading(false)
     setEditingSale(sale)
     setEditItemId(sale.menu_item_id)
     setEditQuery('')
+setEditChannel(sale.channel)
+setEditQty(String(sale.quantity ?? 1))
+setEditTotal(String(sale.total_amount ?? 0))
+
 setEditChannel(sale.channel)
 setEditQty(String(sale.quantity ?? 1))
 setEditTotal(String(sale.total_amount ?? 0))
@@ -532,14 +536,8 @@ setEditTotal(String(sale.total_amount ?? 0))
             Dia
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </label>
-          <label>
-            Canal
-            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
-              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </label>
 <label>
-Filtro de canal
+Canal
 <select className="select-control" value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
 <option value="all">Todos</option>
 {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
