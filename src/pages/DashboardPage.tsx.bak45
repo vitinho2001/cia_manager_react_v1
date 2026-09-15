@@ -2,7 +2,6 @@ import { ArrowRight, CircleDollarSign, Database, PackageCheck, ShoppingBag, Tren
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/PageHeader'
 import { StatCard } from '../components/StatCard'
-import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 
 const activity = [
@@ -10,19 +9,8 @@ const activity = [
   ['Receita atualizada','Caldo Verde — 10 porções','Ontem, 18:20'],
   ['Custo importado','Energia elétrica','Ontem, 14:05'],
 ]
-const pad2 = (n: number) => String(n).padStart(2, '0')
-const monthKey = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1)
-const currentMonth = monthKey(new Date())
-const monthOptions: string[] = []
-for (let i = 11; i >= 0; i--) {
-  const d = new Date()
-  d.setDate(1)
-  d.setMonth(d.getMonth() - i)
-  monthOptions.push(monthKey(d))
-}
-const monthLabel = (m: string) => new Date(m + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-export function DashboardPage(){const{configured}=useAuth();const [month,setMonth]=useState(currentMonth);return <div className="page-container">
-  <PageHeader eyebrow="Visão geral" title="Bom dia, Ana" description="Acompanhe os principais indicadores da Cia. do Caldinho." actions={<select className="select-control" value={month} onChange={(e) => setMonth(e.target.value)} title="Mes do dashboard">{monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>}/>
+export function DashboardPage(){const{configured}=useAuth();return <div className="page-container">
+  <PageHeader eyebrow="Visão geral" title="Bom dia, Ana" description="Acompanhe os principais indicadores da Cia. do Caldinho." actions={<select className="select-control" defaultValue="2026-08"><option value="2026-08">Agosto de 2026</option></select>}/>
   <section className="stats-grid">
     <StatCard label="Faturamento" value="R$ 0,00" detail="Mês selecionado" icon={<CircleDollarSign size={19}/>} trend="0%"/>
     <StatCard label="CMV estimado" value="0,0%" detail="Baseado nas vendas" icon={<TrendingUp size={19}/>} />
