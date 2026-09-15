@@ -301,7 +301,7 @@ export function RecipesPage() {
   }
 
   return <div className="page-container">
-    <PageHeader eyebrow="Engenharia de custos" title="Receitas" description="Monte preparos reutilizáveis e acompanhe o custo por rendimento em cada mês." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(e)=>setMonth(e.target.value)}/></label><Button variant="secondary" onClick={exportAllRecipes} icon={<Download size={16}/>}>Exportar receitas</Button><Button onClick={openNew} icon={<Plus size={17}/>}>Nova receita</Button></>} />
+    <PageHeader  title="Receitas" description="Monte preparos reutilizáveis e acompanhe o custo por rendimento em cada mês." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(e)=>setMonth(e.target.value)}/></label><Button variant="secondary" onClick={exportAllRecipes} icon={<Download size={16}/>}>Exportar receitas</Button><Button onClick={openNew} icon={<Plus size={17}/>}>Nova receita</Button></>} />
     {success && <div className="notice notice-success">{success}<button onClick={()=>setSuccess(null)}><X size={16}/></button></div>}
     {error && !modalOpen && <div className="notice notice-error">{error}<button onClick={()=>setError(null)}><X size={16}/></button></div>}
 

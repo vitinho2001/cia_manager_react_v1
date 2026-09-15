@@ -105,7 +105,7 @@ export function DashboardPage() {
 
   return (
     <div className="page-container">
-      <PageHeader eyebrow="Visao geral" title="Dashboard" description="Indicadores do mes selecionado, calculados a partir das vendas, compras e estoque." actions={<select className="select-control" value={month} onChange={(e) => setMonth(e.target.value)} title="Mes do dashboard">{monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>} />
+      <PageHeader eyebrow="Visao geral" title="Bem vindo" description="Indicadores do mes selecionado, calculados a partir das vendas, compras e estoque." actions={<select className="select-control" value={month} onChange={(e) => setMonth(e.target.value)} title="Mes do dashboard">{monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>} />
       <section className="stats-grid">
         <StatCard label="Faturamento" value={brl(revenue)} detail="Mes selecionado" icon={<CircleDollarSign size={19}/>} trend={trendLabel} />
         <StatCard label="CMV estimado" value={pct(cmvPct)} detail="Insumos consumidos / vendas" icon={<TrendingUp size={19}/>} />

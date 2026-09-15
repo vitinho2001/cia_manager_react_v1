@@ -257,7 +257,7 @@ export function IngredientsPage() {
   const selectedHistory = selectedIngredient ? purchasesByIngredient.get(selectedIngredient.id) ?? [] : []
 
   return <div className="page-container">
-    <PageHeader eyebrow="Engenharia de custos" title="Insumos" description="Cadastre compras, acompanhe o histórico e calcule o preço médio ponderado mensal." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(event)=>setMonth(event.target.value)}/></label><Button variant="secondary" icon={<Download size={16}/>} onClick={exportCsv}>Exportar</Button><Button icon={<Plus size={17}/>} onClick={openNew}>Novo insumo</Button></>} />
+    <PageHeader  title="Insumos" description="Cadastre compras, acompanhe o histórico e calcule o preço médio ponderado mensal." actions={<><label className="month-control"><CalendarDays size={16}/><input type="month" value={month} onChange={(event)=>setMonth(event.target.value)}/></label><Button variant="secondary" icon={<Download size={16}/>} onClick={exportCsv}>Exportar</Button><Button icon={<Plus size={17}/>} onClick={openNew}>Novo insumo</Button></>} />
 
     {success && <div className="notice notice-success">{success}<button onClick={()=>setSuccess(null)}><X size={15}/></button></div>}
     {error && !modal && <div className="notice notice-error">{error}<button onClick={()=>setError(null)}><X size={15}/></button></div>}

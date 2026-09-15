@@ -284,7 +284,7 @@ setFeeBysell(pctInput(settingsData.bysell_fee))
   }
 
 return <div className="page-stack">
-    <PageHeader eyebrow="Engenharia de cardápio" title="Cardápio" description="Vincule cada produto a receitas e/ou insumos diretos e acompanhe o custo unitário por mês." actions={<Button onClick={openNew} icon={<Plus size={17}/>}>Novo item</Button>} />
+    <PageHeader  title="Cardápio" description="Vincule cada produto a receitas e/ou insumos diretos e acompanhe o custo unitário por mês." actions={<Button onClick={openNew} icon={<Plus size={17}/>}>Novo item</Button>} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <div style={{ fontWeight: 600, fontSize: 15 }}>Taxas dos canais</div>
