@@ -270,7 +270,7 @@ return sales.filter((s) => s.channel === channelFilter)
     } finally {
       setLoading(false)
     }
-  }, [organizationId, from, to])
+  }, [organizationId, period])
 
   useEffect(() => {
     getCurrentOrganizationId()
