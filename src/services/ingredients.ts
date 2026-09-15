@@ -90,3 +90,18 @@ export async function deleteIngredient(id: string) {
   const { error } = await supabase.from('ingredients').delete().eq('id', id)
   if (error) throw error
 }
+export async function getIngredientUsage(id: string) {
+  if (!supabase) throw new Error('Supabase não configurado.')
+  const [recipes, menu, purchases, adjustments] = await Promise.all([
+    supabase.from('recipe_items').select('recipe_id, quantity').eq('ingredient_id', id),
+    supabase.from('menu_item_components').select('menu_item_id').eq('ingredient_id', id),
+    supabase.from('ingredient_purchases').select('id').eq('ingredient_id', id).limit(1),
+    supabase.from('stock_adjustments').select('id').eq('ingredient_id', id).limit(1),
+  ])
+  return {
+    recipeCount: recipes.data?.length ?? 0,
+    menuCount: menu.data?.length ?? 0,
+    hasPurchases: (purchases.data?.length ?? 0) > 0,
+    hasAdjustments: (adjustments.data?.length ?? 0) > 0,
+  }
+}

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { getCurrentOrganizationId } from '../services/organization'
-import { addPurchase, createIngredientWithPurchase, deleteIngredient, deletePurchase, getIngredientUsage, listIngredients, listPurchases, updatePurchase } from '../services/ingredients'
+import { addPurchase, createIngredientWithPurchase, deleteIngredient, deletePurchase, listIngredients, listPurchases, updatePurchase } from '../services/ingredients'
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
 
 const units = ['kg', 'g', 'mg', 'L', 'ml', 'un', 'caixa', 'pacote', 'saco', 'fardo', 'garrafa', 'lata', 'maço']
@@ -228,17 +228,7 @@ export function IngredientsPage() {
   }
 
   async function removeIngredient(ingredient: Ingredient) {
-    let usage
-    try { usage = await getIngredientUsage(ingredient.id) }
-    catch { usage = { recipeCount: 0, menuCount: 0, hasPurchases: true, hasAdjustments: false } }
-    let message = 'Excluir o insumo ' + ingredient.name + '?'
-    if (usage.recipeCount > 0) message += '\n\nUsado em ' + usage.recipeCount + ' receita(s).'
-    if (usage.menuCount > 0) message += '\n\nUsado em ' + usage.menuCount + ' item(ns) de cardapio.'
-    if (usage.hasPurchases) message += '\n\nPossui historico de compras.'
-    if (usage.hasAdjustments) message += '\n\nPossui ajustes de estoque.'
-    if (usage.recipeCount > 0 || usage.menuCount > 0) message += '\n\nExcluir pode afetar o calculo de custos. Deseja continuar?'
-    if (!window.confirm(message)) return
-    
+    if (!window.confirm(`Excluir o insumo “${ingredient.name}” e todo o histórico de compras?`)) return
     try { await deleteIngredient(ingredient.id); setSuccess('Insumo excluído.'); await load() }
     catch (err) { setError(err instanceof Error ? `${err.message}. O insumo pode estar vinculado a uma receita.` : 'Não foi possível excluir o insumo.') }
   }
