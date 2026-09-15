@@ -65,7 +65,7 @@ function periodKey(type: PeriodType, d: Date): string {
 }
 function periodLabel(p: Period): string {
   if (p.type === 'week') return 'Semana de ' + new Date(p.key + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-  if (p.type === 'month') return new Date(p.key + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  if (p.type === 'month') return new Date(Number(p.key.slice(0, 4)), Number(p.key.slice(5, 7)) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
   if (p.type === 'quarter') { const [y, q] = p.key.split('-').map(Number); return y + ' · ' + (q === 1 ? '1º trim' : q === 2 ? '2º trim' : q === 3 ? '3º trim' : '4º trim') }
   if (p.type === 'semester') { const [y, s] = p.key.split('-').map(Number); return y + ' · ' + (s === 1 ? '1º sem' : '2º sem') }
   return 'Ano de ' + p.key

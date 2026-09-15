@@ -1,3 +1,16 @@
+const fs = require('fs')
+const raw = fs.readFileSync(__filename, 'utf8')
+const A = '/*===INICIO==='
+const B = '===FIM===*/'
+const i = raw.lastIndexOf(A)
+const j = raw.lastIndexOf(B)
+if (i < 0 || j < 0 || j < i) { console.log('ERRO: marcadores nao encontrados - nada foi alterado'); process.exit(1) }
+let content = raw.slice(i + A.length, j)
+content = content.replace(/^\r?\n/, '').replace(/\uFEFF/g, '')
+fs.writeFileSync('src/pages/DashboardPage.tsx.bak48', fs.readFileSync('src/pages/DashboardPage.tsx', 'utf8'), 'utf8')
+fs.writeFileSync('src/pages/DashboardPage.tsx', content, 'utf8')
+console.log('OK: DashboardPage.tsx conectado aos dados reais')
+/*===INICIO===
 import { useEffect, useMemo, useState } from 'react'
 import { CircleDollarSign, Database, PackageCheck, ShoppingBag, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -143,3 +156,4 @@ export function DashboardPage() {
   )
 }
 function UtensilsIcon() { return <span className="quick-icon">🍲</span> }
+===FIM===*/
