@@ -16,14 +16,7 @@ import type { StockLine } from '../types/stock'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const monthKey = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1)
-const today = () => {
-  const d = new Date()
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
-}
-const firstOfMonth = () => {
-  const d = new Date()
-  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-01'
-}
+const currentMonth = monthKey(new Date())
 const monthOptions: string[] = []
 for (let i = 11; i >= 0; i--) {
   const d = new Date()
@@ -35,14 +28,17 @@ function monthLabel(m: string) {
   const parts = m.split('-').map(Number)
   return new Date(parts[0], parts[1] - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
 }
+function monthBounds(month: string) {
+  const parts = month.split('-').map(Number)
+  return { start: month + '-01', end: month + '-' + pad2(new Date(parts[0], parts[1], 0).getDate()) }
+}
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const pct = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'
 
 export function DashboardPage() {
   const { configured } = useAuth()
   const [organizationId, setOrganizationId] = useState<string | null>(null)
-  const [from, setFrom] = useState(firstOfMonth())
-  const [to, setTo] = useState(today())
+  const [month, setMonth] = useState(currentMonth)
   const [sales, setSales] = useState<Sale[]>([])
   const [allSales, setAllSales] = useState<Sale[]>([])
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
@@ -54,11 +50,12 @@ export function DashboardPage() {
     try {
       const orgId = organizationId ?? await getCurrentOrganizationId()
       setOrganizationId(orgId)
+      const bounds = monthBounds(month)
       const [saleRows, allSaleRows, ingRows, purRows, compRows, recRows, recItemRows, adjRows] = await Promise.all([
-        listSales(orgId, from, to).catch(() => []),
+        listSales(orgId, bounds.start, bounds.end).catch(() => []),
         listSales(orgId).catch(() => []),
         listIngredients(orgId).catch(() => []),
-        listPurchases(orgId, undefined, to).catch(() => []),
+        listPurchases(orgId, undefined, bounds.end).catch(() => []),
         listMenuComponents(orgId).catch(() => []),
         listRecipes(orgId).catch(() => []),
         listRecipeItems(orgId).catch(() => []),
@@ -75,7 +72,7 @@ export function DashboardPage() {
     }
   }
 
-  useEffect(() => { void load() }, [from, to])
+  useEffect(() => { void load() }, [month])
 
   const revenue = useMemo(() => sales.reduce((sum, x) => sum + (Number(x.total_amount) || 0), 0), [sales])
   const itemsSold = useMemo(() => sales.reduce((sum, x) => sum + (Number(x.quantity) || 0), 0), [sales])
@@ -83,13 +80,13 @@ export function DashboardPage() {
   const cmvPct = revenue > 0 ? (cmvCost / revenue) * 100 : 0
 
   const trendLabel = useMemo(() => {
-    const fromParts = from.split('-').map(Number)
-    const prevKey = monthKey(new Date(fromParts[0], fromParts[1] - 2, 1))
+    const parts = month.split('-').map(Number)
+    const prevKey = monthKey(new Date(parts[0], parts[1] - 2, 1))
     const prev = allSales.filter((s) => (s.sale_date || '').startsWith(prevKey)).reduce((sum, x) => sum + (Number(x.total_amount) || 0), 0)
     if (prev <= 0) return '0%'
     const diff = ((revenue - prev) / prev) * 100
     return (diff >= 0 ? '+' : '') + diff.toFixed(0) + '%'
-  }, [allSales, from, revenue])
+  }, [allSales, month, revenue])
 
   const monthly = useMemo(() => {
     return monthOptions.slice(0, 6).reverse().map((m) => ({
@@ -108,9 +105,9 @@ export function DashboardPage() {
 
   return (
     <div className="page-container">
-      <PageHeader eyebrow="Visao geral" title="Bem vindo" description="Indicadores do periodo selecionado, calculados a partir das vendas, compras e estoque." actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => setTo(e.target.value)} /></label></>} />
+      <PageHeader eyebrow="Visao geral" title="Bem vindo" description="Indicadores do mes selecionado, calculados a partir das vendas, compras e estoque." actions={<select className="select-control" value={month} onChange={(e) => setMonth(e.target.value)} title="Mes do dashboard">{monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>} />
       <section className="stats-grid">
-        <StatCard label="Faturamento" value={brl(revenue)} detail="Periodo selecionado" icon={<CircleDollarSign size={19}/>} trend={trendLabel} />
+        <StatCard label="Faturamento" value={brl(revenue)} detail="Mes selecionado" icon={<CircleDollarSign size={19}/>} trend={trendLabel} />
         <StatCard label="CMV estimado" value={pct(cmvPct)} detail="Insumos consumidos / vendas" icon={<TrendingUp size={19}/>} />
         <StatCard label="Itens vendidos" value={String(itemsSold)} detail="Todos os canais" icon={<ShoppingBag size={19}/>} />
         <StatCard label="Banco de dados" value={configured ? 'Conectado' : 'A configurar'} detail="Supabase PostgreSQL" icon={<Database size={19}/>} />
