@@ -18,9 +18,9 @@ import type { StockAdjustment, StockAdjustmentType } from '../types/stock'
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 
-type PeriodType = 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year'
+type PeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year'
 type Period = { type: PeriodType; key: string }
-const periodTypeLabel: Record<PeriodType, string> = { day: 'Dia', week: 'Semana', month: 'Mês', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano' }
+const periodTypeLabel: Record<PeriodType, string> = { week: 'Semana', month: 'Mês', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano' }
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const iso = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
 function startOfWeek(d: Date): Date {
@@ -35,7 +35,6 @@ function addDays(d: Date, n: number): Date {
   return x
 }
 function periodBounds(p: Period): { start: string; end: string } {
-  if (p.type === 'day') { return { start: p.key, end: p.key } }
   if (p.type === 'week') {
     const monday = startOfWeek(new Date(p.key + 'T00:00:00'))
     return { start: iso(monday), end: iso(addDays(monday, 6)) }
@@ -58,7 +57,6 @@ function periodBounds(p: Period): { start: string; end: string } {
   return { start: y + '-01-01', end: y + '-12-31' }
 }
 function periodKey(type: PeriodType, d: Date): string {
-  if (type === 'day') return iso(d)
   if (type === 'week') return iso(startOfWeek(d))
   if (type === 'month') return d.getFullYear() + '-' + pad2(d.getMonth() + 1)
   if (type === 'quarter') return d.getFullYear() + '-Q' + (Math.floor(d.getMonth() / 3) + 1)
@@ -66,7 +64,6 @@ function periodKey(type: PeriodType, d: Date): string {
   return String(d.getFullYear())
 }
 function periodLabel(p: Period): string {
-  if (p.type === 'day') return new Date(Number(p.key.slice(0,4)), Number(p.key.slice(5,7))-1, Number(p.key.slice(8,10))).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   if (p.type === 'week') return 'Semana de ' + new Date(p.key + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
   if (p.type === 'month') return new Date(Number(p.key.slice(0, 4)), Number(p.key.slice(5, 7)) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
   if (p.type === 'quarter') { const [y, q] = p.key.split('-').map(Number); return y + ' · ' + (q === 1 ? '1º trim' : q === 2 ? '2º trim' : q === 3 ? '3º trim' : '4º trim') }
@@ -76,8 +73,7 @@ function periodLabel(p: Period): string {
 function periodOptions(type: PeriodType): Period[] {
   const out: Period[] = []
   const now = new Date()
-  if (type === 'day') { for (let i = 0; i < 30; i++) { const d = addDays(now, -i); out.push({ type, key: periodKey(type, d) }) } }
-  else if (type === 'week') { for (let i = 0; i < 12; i++) { const d = addDays(startOfWeek(now), -7 * i); out.push({ type, key: periodKey(type, d) }) } }
+  if (type === 'week') { for (let i = 0; i < 12; i++) { const d = addDays(startOfWeek(now), -7 * i); out.push({ type, key: periodKey(type, d) }) } }
   else if (type === 'month') { for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ type, key: periodKey(type, d) }) } }
   else if (type === 'quarter') { for (let i = 0; i < 8; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 3 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
   else if (type === 'semester') { for (let i = 0; i < 6; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 6 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
@@ -175,7 +171,7 @@ const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents,
 
   return (
     <div className="page-container">
-      <PageHeader  title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<><select className="select-control" value={period.type} onChange={(e) => { const t = e.target.value as PeriodType; setPeriod({ type: t, key: periodKey(t, new Date()) }) }} title="Tipo de periodo">{(['day','week','month','quarter','semester','year'] as PeriodType[]).map((t) => <option key={t} value={t}>{periodTypeLabel[t]}</option>)}</select><select className="select-control" value={period.key} onChange={(e) => setPeriod({ type: period.type, key: e.target.value })} title="Periodo">{periodOptions(period.type).map((p) => <option key={p.key} value={p.key}>{periodLabel(p)}</option>)}</select><Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button></>} />
+      <PageHeader  title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<><select className="select-control" value={period.type} onChange={(e) => { const t = e.target.value as PeriodType; setPeriod({ type: t, key: periodKey(t, new Date()) }) }} title="Tipo de periodo">{(['week','month','quarter','semester','year'] as PeriodType[]).map((t) => <option key={t} value={t}>{periodTypeLabel[t]}</option>)}</select><select className="select-control" value={period.key} onChange={(e) => setPeriod({ type: period.type, key: e.target.value })} title="Periodo">{periodOptions(period.type).map((p) => <option key={p.key} value={p.key}>{periodLabel(p)}</option>)}</select><Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button></>} />
 
       <div className="stat-grid">
         <StatCard icon={<Package size={20}/>} label="Insumos" value={String(lines.length)} detail="cadastrados" />

@@ -20,7 +20,7 @@ const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 
 
 type PeriodType = 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year'
 type Period = { type: PeriodType; key: string }
-const periodTypeLabel: Record<PeriodType, string> = { day: 'Dia', week: 'Semana', month: 'Mês', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano' }
+const periodTypeLabel: Record<PeriodType, string> = { week: 'Semana', month: 'Mês', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano' }
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const iso = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
 function startOfWeek(d: Date): Date {

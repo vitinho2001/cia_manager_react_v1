@@ -680,7 +680,6 @@ Canal
       <section className="panel">
         <h2>Importar vendas</h2>
         <p>O arquivo deve ter as colunas: <strong>produto, quantidade, total</strong> (.xlsx ou .csv). Selecione o dia e o canal antes de importar.</p>
-        <label style={{ display: 'block', marginBottom: 8 }}>Dia<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <label style={{ display: 'block', marginBottom: 8 }}>
           Canal da importacao
           <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>

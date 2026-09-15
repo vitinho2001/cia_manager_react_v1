@@ -93,10 +93,6 @@ export function MenuPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
-  const [catModal, setCatModal] = useState(false)
-  const [newCat, setNewCat] = useState('')
-  const [renamingCat, setRenamingCat] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
   const [editing, setEditing] = useState<MenuItem | null>(null)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [saving, setSaving] = useState(false)
@@ -287,36 +283,7 @@ setFeeBysell(pctInput(settingsData.bysell_fee))
     }
   }
 
-function addCategory() {
-    const name = newCat.trim()
-    if (!name) return
-    if (categories.includes(name)) return
-    setCategoryFilter(name)
-    setNewCat('')
-  }
-  function startRename(cat: string) {
-    setRenamingCat(cat)
-    setRenameValue(cat)
-  }
-  function confirmRename() {
-    const name = renameValue.trim()
-    if (!name || !renamingCat) return
-    const oldCat = renamingCat
-    // renomear nao altera os itens; apenas cria o novo nome no filtro
-    setCategoryFilter(name)
-    setRenamingCat(null)
-    setRenameValue('')
-  }
-  async function deleteCategory(cat: string) {
-    if (!window.confirm('Excluir a categoria ' + cat + ' e TODOS os itens dela? Esta acao nao pode ser desfeita.')) return
-    const toDelete = items.filter((i) => i.category === cat)
-    for (const item of toDelete) {
-      try { await deleteMenuItem(item.id) } catch { /* segue */ }
-    }
-    setCategoryFilter('Todas')
-    await load()
-  }
-  return <div className="page-container">
+return <div className="page-container">
     <PageHeader  title="Cardápio" description="Vincule cada produto a receitas e/ou insumos diretos e acompanhe o custo unitário por mês." actions={<Button onClick={openNew} icon={<Plus size={17}/>}>Novo item</Button>} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
@@ -330,7 +297,7 @@ function addCategory() {
       </div>
     {error && <div className="notice notice-error">{error}<button type="button" onClick={() => setError(null)}><X size={16}/></button></div>}
     <section className="content-card menu-toolbar-card">
-      <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><Button variant="ghost" onClick={() => setCatModal(true)}>Categorias</Button><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="Bomboniere">Bomboniere</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
+      <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="Bomboniere">Bomboniere</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
     </section>
     {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span><span>Sug. Balcao<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).counter)}</strong></span><span>Sug. BySell<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).bysell)}</strong></span><span>Sug. iFood<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).ifood)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
 
@@ -357,34 +324,5 @@ function addCategory() {
       <div className="recipe-summary"><span>Custo direto<strong>{money(draftCost.total)}</strong></span><span>Componentes<strong>{draft.components.length}</strong></span><span className={draftCost.incomplete ? 'warning-summary' : 'highlight'}>{draftCost.incomplete ? 'Pendências' : 'Status'}<strong>{draftCost.incomplete ? draftCost.incomplete : 'Completo'}</strong></span></div>
       <div className="modal-actions"><Button type="button" variant="ghost" onClick={() => setModalOpen(false)}>Cancelar</Button><Button type="submit" disabled={saving}>{saving ? 'Salvando…' : 'Salvar item'}</Button></div>
     </form></div>}
-  
-      {catModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <div className="modal-header"><h2>Gerenciar categorias</h2><button className="modal-close" type="button" onClick={() => setCatModal(false)}><X size={18} /></button></div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-              <input type="text" value={newCat} onChange={(e) => setNewCat(e.target.value)} placeholder="Nova categoria" />
-              <Button onClick={addCategory} icon={<Plus size={16}/>}>Adicionar</Button>
-            </div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {categories.filter((c) => c !== 'Todas').map((cat) => (
-                <div key={cat} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 8, border: '1px solid #e5e7eb', borderRadius: 10 }}>
-                  {renamingCat === cat ? (
-                    <input type="text" value={renameValue} onChange={(e) => setRenameValue(e.target.value)} />
-                  ) : <strong>{cat}</strong>}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {renamingCat === cat ? (
-                      <Button onClick={confirmRename}>Salvar</Button>
-                    ) : (
-                      <Button variant="secondary" onClick={() => startRename(cat)}>Renomear</Button>
-                    )}
-                    <Button variant="danger" onClick={() => void deleteCategory(cat)}>Excluir</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-</div>
+  </div>
 }
