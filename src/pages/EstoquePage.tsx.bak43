@@ -18,24 +18,6 @@ import type { StockAdjustment, StockAdjustmentType } from '../types/stock'
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
 
-const monthKey = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
-const currentMonth = monthKey(new Date())
-function monthBounds(month: string) {
-  const parts = month.split('-').map(Number)
-  const year = parts[0]
-  const monthNumber = parts[1]
-  return { start: month + '-01', end: month + '-' + String(new Date(year, monthNumber, 0).getDate()).padStart(2, '0') }
-}
-const monthOptions: string[] = []
-for (let i = 11; i >= 0; i--) {
-  const d = new Date()
-  d.setDate(1)
-  d.setMonth(d.getMonth() - i)
-  monthOptions.push(monthKey(d))
-}
-const monthLabel = (m: string) => new Date(m + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-
-
 export function EstoquePage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
@@ -50,7 +32,6 @@ export function EstoquePage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [month, setMonth] = useState(currentMonth)
   const [modal, setModal] = useState(false)
   const [adjIngredient, setAdjIngredient] = useState('')
   const [adjType, setAdjType] = useState<StockAdjustmentType>('loss')
@@ -64,15 +45,14 @@ export function EstoquePage() {
     try {
       const orgId = organizationId ?? await getCurrentOrganizationId()
       setOrganizationId(orgId)
-      const bounds = monthBounds(month)
       const [ingRows, purRows, menuRows, compRows, recRows, recItemRows, saleRows, adjRows] = await Promise.all([
         listIngredients(orgId).catch((e) => { console.error('ingredientes', e); return [] }),
-        listPurchases(orgId, undefined, bounds.end).catch((e) => { console.error('compras', e); return [] }),
+        listPurchases(orgId).catch((e) => { console.error('compras', e); return [] }),
         listMenuItems(orgId).catch((e) => { console.error('cardapio', e); return [] }),
         listMenuComponents(orgId).catch((e) => { console.error('componentes', e); return [] }),
         listRecipes(orgId).catch((e) => { console.error('receitas', e); return [] }),
         listRecipeItems(orgId).catch((e) => { console.error('itens receita', e); return [] }),
-        listSales(orgId, undefined, bounds.end).catch((e) => { console.error('vendas', e); return [] }),
+        listSales(orgId).catch((e) => { console.error('vendas', e); return [] }),
         listStockAdjustments(orgId).catch((e) => { console.error('ajustes', e); return [] }),
       ])
       setIngredients(ingRows); setPurchases(purRows); setMenuItems(menuRows); setMenuComponents(compRows)
@@ -82,7 +62,8 @@ export function EstoquePage() {
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { void load() }, [month])
+  useEffect(() => { void load() }, [])
+useEffect(() => { void load() }, [])
 
 const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents, recipeItems, sales, adjustments, recipes), [ingredients, purchases, menuComponents, recipeItems, sales, adjustments, recipes])
 
@@ -124,7 +105,7 @@ const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents,
 
   return (
     <div>
-      <PageHeader eyebrow="Engenharia de custos" title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<><select className="select-control" value={month} onChange={(e) => setMonth(e.target.value)} title="Mes do estoque">{monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}</select><Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button></>} />
+      <PageHeader eyebrow="Engenharia de custos" title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button>} />
 
       <div className="stat-grid">
         <StatCard icon={<Package size={20}/>} label="Insumos" value={String(lines.length)} detail="cadastrados" />

@@ -1,9 +1,8 @@
 import { supabase } from './supabase'
-import { convertQuantity } from '../utils/units'
 import type { Ingredient } from '../types/ingredients'
 import type { IngredientPurchase } from '../types/ingredients'
 import type { MenuItemComponent } from '../types/menu'
-import type { Recipe, RecipeItem } from '../types/recipes'
+import type { RecipeItem } from '../types/recipes'
 import type { Sale } from '../types/sales'
 import type { StockAdjustment, StockAdjustmentInput, StockLine } from '../types/stock'
 
@@ -33,27 +32,16 @@ export function computeStock(
   recipeItems: RecipeItem[],
   sales: Sale[],
   adjustments: StockAdjustment[],
-  recipes: Recipe[],
 ): StockLine[] {
-  const ingredientUnit: Record<string, string> = {}
-  for (const ing of ingredients) ingredientUnit[ing.id] = ing.purchase_unit
-  const recipeYield: Record<string, number> = {}
-  for (const r of recipes) recipeYield[r.id] = r.yield_quantity > 0 ? r.yield_quantity : 1
-
   const perUnit: Record<string, Record<string, number>> = {}
   for (const c of menuComponents) {
     if (!perUnit[c.menu_item_id]) perUnit[c.menu_item_id] = {}
     if (c.component_type === 'ingredient' && c.ingredient_id) {
-      const unit = c.unit || ingredientUnit[c.ingredient_id]
-      const converted = convertQuantity(c.quantity || 0, unit, ingredientUnit[c.ingredient_id])
-      if (converted != null) perUnit[c.menu_item_id][c.ingredient_id] = (perUnit[c.menu_item_id][c.ingredient_id] ?? 0) + converted
+      perUnit[c.menu_item_id][c.ingredient_id] = (perUnit[c.menu_item_id][c.ingredient_id] ?? 0) + (c.quantity || 0)
     } else if (c.component_type === 'recipe' && c.recipe_id) {
       for (const ri of recipeItems) {
         if (ri.recipe_id === c.recipe_id && ri.ingredient_id) {
-          const converted = convertQuantity(ri.quantity || 0, ri.recipe_unit, ingredientUnit[ri.ingredient_id])
-          if (converted != null) {
-            perUnit[c.menu_item_id][ri.ingredient_id] = (perUnit[c.menu_item_id][ri.ingredient_id] ?? 0) + (c.quantity || 0) * converted / (recipeYield[c.recipe_id] || 1)
-          }
+          perUnit[c.menu_item_id][ri.ingredient_id] = (perUnit[c.menu_item_id][ri.ingredient_id] ?? 0) + (c.quantity || 0) * (ri.quantity || 0)
         }
       }
     }
