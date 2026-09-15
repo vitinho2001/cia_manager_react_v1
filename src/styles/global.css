@@ -83,3 +83,9 @@ input[type="text"],input[type="search"],input[type="date"],input[type="month"],i
 .menu-toolbar-card .toolbar-row select,.menu-toolbar-card .toolbar-row .month-field{white-space:nowrap}
 .menu-toolbar-card .month-field{display:flex;align-items:center;gap:6px;margin:0}
 @media(max-width:900px){.menu-toolbar-card .toolbar-row{flex-wrap:wrap}}
+
+/* v62: toolbar do cardapio em uma linha unica */
+.menu-toolbar-card .toolbar-row{display:flex;flex-wrap:nowrap !important;align-items:center;gap:10px;overflow-x:auto;padding-bottom:2px}
+.menu-toolbar-card .toolbar-row .search-field{flex:1 1 180px;min-width:140px}
+.menu-toolbar-card .toolbar-row select{flex:0 0 auto;max-width:180px}
+.menu-toolbar-card .toolbar-row .month-field{flex:0 0 auto}

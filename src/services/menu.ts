@@ -70,3 +70,10 @@ export async function seedMenuItems(organizationId: string, rows: { category: st
   const { error } = await supabase.from('menu_items').upsert(rows.map((row) => ({ organization_id: organizationId, category: row.category, name: row.name })), { onConflict: 'organization_id,name,category', ignoreDuplicates: true })
   if (error) throw error
 }
+
+
+export async function updateMenuItemCategory(id: string, category: string) {
+  if (!supabase) throw new Error('Supabase não configurado.')
+  const { error } = await supabase.from('menu_items').update({ category: category.trim(), updated_at: new Date().toISOString() }).eq('id', id)
+  if (error) throw error
+}

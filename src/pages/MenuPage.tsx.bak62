@@ -8,7 +8,7 @@ import type { BusinessSettings } from '../types/settings'
 import { getCurrentOrganizationId } from '../services/organization'
 import { listIngredients, listPurchases } from '../services/ingredients'
 import { listRecipeItems, listRecipes } from '../services/recipes'
-import { createMenuItem, deleteMenuItem, listMenuComponents, listMenuItems, seedMenuItems, updateMenuItem, updateMenuItemCategory } from '../services/menu'
+import { createMenuItem, deleteMenuItem, listMenuComponents, listMenuItems, seedMenuItems, updateMenuItem } from '../services/menu'
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
 import type { Recipe, RecipeItem } from '../types/recipes'
 import type { MenuComponentInput, MenuItem, MenuItemComponent, MenuComponentType } from '../types/menu'
@@ -94,7 +94,6 @@ export function MenuPage() {
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [catModal, setCatModal] = useState(false)
-  const [customCategories, setCustomCategories] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('cia-cat-extras') || '[]') } catch { return [] } })
   const [newCat, setNewCat] = useState('')
   const [renamingCat, setRenamingCat] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -182,7 +181,7 @@ setFeeBysell(pctInput(settingsData.bysell_fee))
     return { total, incomplete }
   }
 
-  const categories = useMemo(() => ['Todas', ...Array.from(new Set([...items.map((item) => item.category), ...customCategories])).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'))], [items, customCategories])
+  const categories = useMemo(() => ['Todas', ...Array.from(new Set(items.map((item) => item.category))).sort((a, b) => a.localeCompare(b, 'pt-BR'))], [items])
   const filtered = useMemo(() => items.filter((item) => (categoryFilter === 'Todas' || item.category === categoryFilter) && `${item.name} ${item.category}`.toLowerCase().includes(search.toLowerCase())), [items, categoryFilter, search])
   const grouped = useMemo(() => { const map = new Map<string, MenuItem[]>(); for (const item of filtered) map.set(item.category, [...(map.get(item.category) ?? []), item]); return map }, [filtered])
 
@@ -288,15 +287,10 @@ setFeeBysell(pctInput(settingsData.bysell_fee))
     }
   }
 
-function persistCats(next: string[]) {
-    try { localStorage.setItem('cia-cat-extras', JSON.stringify(next)) } catch { /* segue */ }
-    setCustomCategories(next)
-  }
-  function addCategory() {
+function addCategory() {
     const name = newCat.trim()
     if (!name) return
-    if (categories.includes(name)) { setNewCat(''); return }
-    persistCats([...customCategories, name])
+    if (categories.includes(name)) return
     setCategoryFilter(name)
     setNewCat('')
   }
@@ -304,20 +298,14 @@ function persistCats(next: string[]) {
     setRenamingCat(cat)
     setRenameValue(cat)
   }
-  async function confirmRename() {
+  function confirmRename() {
     const name = renameValue.trim()
     if (!name || !renamingCat) return
     const oldCat = renamingCat
-    if (name === oldCat) { setRenamingCat(null); setRenameValue(''); return }
-    const affected = items.filter((i) => i.category === oldCat)
-    for (const item of affected) {
-      try { await updateMenuItemCategory(item.id, name) } catch (err) { setError(err instanceof Error ? err.message : 'Falha ao renomear categoria.') }
-    }
-    if (customCategories.includes(oldCat)) persistCats(customCategories.map((c) => (c === oldCat ? name : c)))
+    // renomear nao altera os itens; apenas cria o novo nome no filtro
     setCategoryFilter(name)
     setRenamingCat(null)
     setRenameValue('')
-    await load()
   }
   async function deleteCategory(cat: string) {
     if (!window.confirm('Excluir a categoria ' + cat + ' e TODOS os itens dela? Esta acao nao pode ser desfeita.')) return
@@ -325,7 +313,6 @@ function persistCats(next: string[]) {
     for (const item of toDelete) {
       try { await deleteMenuItem(item.id) } catch { /* segue */ }
     }
-    if (customCategories.includes(cat)) persistCats(customCategories.filter((c) => c !== cat))
     setCategoryFilter('Todas')
     await load()
   }
@@ -343,7 +330,7 @@ function persistCats(next: string[]) {
       </div>
     {error && <div className="notice notice-error">{error}<button type="button" onClick={() => setError(null)}><X size={16}/></button></div>}
     <section className="content-card menu-toolbar-card">
-      <div className="toolbar-row"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><Button variant="ghost" onClick={() => setCatModal(true)}>Categorias</Button><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="Bomboniere">Bomboniere</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
+      <div className="toolbar-row wrap"><div className="search-field"><Search size={17}/><input placeholder="Buscar item ou categoria..." value={search} onChange={(e) => setSearch(e.target.value)}/></div><Button variant="ghost" onClick={() => setCatModal(true)}>Categorias</Button><select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="Bomboniere">Bomboniere</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><label className="month-field">Mês do custo<input type="month" value={month} onChange={(e) => setMonth(e.target.value)}/></label><Button variant="secondary" onClick={() => void load()} icon={<RefreshCw size={16}/>}>Atualizar</Button>{!items.length && <Button variant="secondary" onClick={() => void seed()} disabled={seeding}>{seeding ? 'Carregando…' : 'Carregar cardápio padrão'}</Button>}</div>
     </section>
     {loading ? <div className="table-message">Carregando cardápio…</div> : !filtered.length ? <div className="empty-state"><UtensilsCrossed size={44}/><h2>Nenhum item encontrado</h2><p>Cadastre manualmente ou carregue o cardápio padrão da Cia. do Caldinho.</p><div className="empty-actions"><Button onClick={openNew} icon={<Plus size={16}/>}>Novo item</Button><Button variant="secondary" onClick={() => void seed()} disabled={seeding}>Carregar padrão</Button></div></div> : <div className="menu-category-stack">{Array.from(grouped.entries()).map(([category, categoryItems]) => <section className="menu-category" key={category}><div className="menu-category-heading"><div><span className="eyebrow">Categoria</span><h2>{category}</h2></div><span>{categoryItems.length} itens</span></div><div className="menu-list">{categoryItems.map((item) => { const cost = menuCost(item); const count = componentsByItem.get(item.id)?.length ?? 0; return <article className="menu-row-card" key={item.id} onClick={() => openEdit(item)}><div className="menu-row-main"><div className="menu-row-icon"><UtensilsCrossed size={18}/></div><div><h3>{item.name}</h3><p>{count ? `${count} componente${count === 1 ? '' : 's'}` : 'Composição pendente'}</p></div></div><div className="menu-row-metrics"><span>Custo<strong>{money(cost.total)}</strong></span><span>Balcão<strong>{money(item.counter_price)}</strong></span><span>Sug. Balcao<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).counter)}</strong></span><span>Sug. BySell<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).bysell)}</strong></span><span>Sug. iFood<strong>{money(suggestFromCost(cost.total, item.target_margin ?? 0.2).ifood)}</strong></span>{cost.incomplete > 0 && <span className="status-warning"><AlertTriangle size={14}/>{cost.incomplete} pendência(s)</span>}</div><div className="row-actions"><button className="icon-action" onClick={(e) => { e.stopPropagation(); openEdit(item) }} title="Editar"><Pencil size={15}/></button><button className="icon-action danger" onClick={(e) => { e.stopPropagation(); void remove(item) }} title="Excluir"><Trash2 size={15}/></button><ChevronRight size={18}/></div></article>})}</div></section>)}</div>}
 
