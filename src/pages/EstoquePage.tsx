@@ -170,7 +170,7 @@ const lines = useMemo(() => computeStock(ingredients, purchases, menuComponents,
   }
 
   return (
-    <div>
+    <div className="page-container">
       <PageHeader  title="Estoque" description="Saldo por insumo = compras - consumo (vendas x receita) e ajustes, valendo pelo custo medio acumulado." actions={<><select className="select-control" value={period.type} onChange={(e) => { const t = e.target.value as PeriodType; setPeriod({ type: t, key: periodKey(t, new Date()) }) }} title="Tipo de periodo">{(['week','month','quarter','semester','year'] as PeriodType[]).map((t) => <option key={t} value={t}>{periodTypeLabel[t]}</option>)}</select><select className="select-control" value={period.key} onChange={(e) => setPeriod({ type: period.type, key: e.target.value })} title="Periodo">{periodOptions(period.type).map((p) => <option key={p.key} value={p.key}>{periodLabel(p)}</option>)}</select><Button onClick={() => setModal(true)}><Plus size={16}/> Ajuste de estoque</Button></>} />
 
       <div className="stat-grid">

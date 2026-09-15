@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, BrainCircuit, ClipboardList, LayoutDashboard, LogOut, Menu, PackageOpen, PackageSearch, ReceiptText, Search, ShoppingCart, UtensilsCrossed, X, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { BarChart3, BookOpen, BrainCircuit, ClipboardList, LayoutDashboard, LogOut, Menu, PackageOpen, PackageSearch, ReceiptText, Search, ShoppingCart, UtensilsCrossed, X } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -17,8 +17,8 @@ const navigation = [
 ]
 
 export function AppLayout() {
-  const { user, signOut } = useAuth(); const [open, setOpen] = useState(false); const [collapsed, setCollapsed] = useState(false)
-  return <div className={'app-shell' + (collapsed ? ' sidebar-collapsed' : '')}>
+  const { user, signOut } = useAuth(); const [open, setOpen] = useState(false)
+  return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <button className="sidebar-close" onClick={() => setOpen(false)} aria-label="Fechar menu"><X size={20}/></button>
       <div className="brand-block"><img src="/logo-cia-do-caldinho.png" alt="Cia. do Caldinho"/><span>Gestão financeira</span></div>
@@ -27,7 +27,7 @@ export function AppLayout() {
     </aside>
     {open && <button className="sidebar-backdrop" aria-label="Fechar menu" onClick={()=>setOpen(false)}/>} 
     <section className="workspace">
-      <header className="topbar"><button className="menu-button" onClick={()=>setOpen(true)}><Menu size={20}/></button><button className="collapse-button" onClick={()=>setCollapsed(!collapsed)} aria-label={collapsed ? 'Expandir menu' : 'Minimizar menu'}>{collapsed ? <ChevronsRight size={18}/> : <ChevronsLeft size={18}/>}</button><div className="search-box"><Search size={17}/><input placeholder="Buscar no sistema"/></div><div className="topbar-badge">Cia. do Caldinho</div></header>
+      <header className="topbar"><button className="menu-button" onClick={()=>setOpen(true)}><Menu size={20}/></button><div className="search-box"><Search size={17}/><input placeholder="Buscar no sistema"/></div><div className="topbar-badge">Cia. do Caldinho</div></header>
       <main className="main-area"><Outlet/></main>
     </section>
   </div>

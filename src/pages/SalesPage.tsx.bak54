@@ -135,9 +135,9 @@ type LinkEntry = {
 const AUTO_OK = 0.82
 const SUGGEST_OK = 0.6
 
-type PeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year' | 'days'
+type PeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year'
 type Period = { type: PeriodType; key: string }
-const periodTypeLabel: Record<PeriodType, string> = { week: 'Semana', month: 'Mes', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano', days: 'Dias' }
+const periodTypeLabel: Record<PeriodType, string> = { week: 'Semana', month: 'Mes', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano' }
 const pad2 = (n: number) => String(n).padStart(2, '0')
 const iso = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
 function startOfWeek(d: Date): Date {
@@ -152,10 +152,6 @@ function addDays(d: Date, n: number): Date {
   return x
 }
 function periodBounds(p: Period): { start: string; end: string } {
-  if (p.type === 'days') {
-    const days = p.key.split(',').map((x) => x.trim()).filter(Boolean).sort()
-    return { start: days[0] || '', end: days[days.length - 1] || '' }
-  }
   if (p.type === 'week') {
     const monday = startOfWeek(new Date(p.key + 'T00:00:00'))
     return { start: iso(monday), end: iso(addDays(monday, 6)) }
@@ -182,7 +178,6 @@ function periodKey(type: PeriodType, d: Date): string {
   if (type === 'month') return d.getFullYear() + '-' + pad2(d.getMonth() + 1)
   if (type === 'quarter') return d.getFullYear() + '-Q' + (Math.floor(d.getMonth() / 3) + 1)
   if (type === 'semester') return d.getFullYear() + '-S' + (d.getMonth() < 6 ? 1 : 2)
-  if (type === 'days') return iso(d)
   return String(d.getFullYear())
 }
 function periodLabel(p: Period): string {
@@ -190,7 +185,6 @@ function periodLabel(p: Period): string {
   if (p.type === 'month') return new Date(Number(p.key.slice(0,4)), Number(p.key.slice(5,7))-1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
   if (p.type === 'quarter') { const [y, q] = p.key.split('-').map(Number); return y + ' · ' + (q === 1 ? '1o trim' : q === 2 ? '2o trim' : q === 3 ? '3o trim' : '4o trim') }
   if (p.type === 'semester') { const [y, s2] = p.key.split('-').map(Number); return y + ' · ' + (s2 === 1 ? '1o sem' : '2o sem') }
-  if (p.type === 'days') return p.key || 'Selecione os dias'
   return 'Ano de ' + p.key
 }
 function periodOptions(type: PeriodType): Period[] {
@@ -200,7 +194,6 @@ function periodOptions(type: PeriodType): Period[] {
   else if (type === 'month') { for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ type, key: periodKey(type, d) }) } }
   else if (type === 'quarter') { for (let i = 0; i < 8; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 3 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
   else if (type === 'semester') { for (let i = 0; i < 6; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 6 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
-  else if (type === 'days') { out.push({ type, key: '' }) }
   else { for (let i = 0; i < 5; i++) { out.push({ type, key: String(now.getFullYear() - i) }) } }
   return out
 }
@@ -256,12 +249,7 @@ return sales.filter((s) => s.channel === channelFilter)
     try {
       const bounds = periodBounds(period)
       const res = await Promise.all([listSales(organizationId, bounds.start, bounds.end), listMenuItems(organizationId)])
-      let saleRows = res[0]
-      if (period.type === 'days') {
-        const dayList = period.key.split(',').map((x) => x.trim()).filter(Boolean)
-        if (dayList.length) saleRows = saleRows.filter((s) => dayList.includes(s.sale_date))
-      }
-      setSales(saleRows)
+      setSales(res[0])
       setMenuItems(res[1])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar vendas.')
@@ -564,7 +552,7 @@ setEditTotal(String(sale.total_amount ?? 0))
         
         title="Vendas"
         description="Vendas por produto, canal e periodo."
-        actions={<><select className="select-control" value={period.type} onChange={(e) => { const t = e.target.value as PeriodType; setPeriod({ type: t, key: periodKey(t, new Date()) }) }} title="Tipo de periodo">{(['week','month','quarter','semester','year'] as PeriodType[]).map((t) => <option key={t} value={t}>{periodTypeLabel[t]}</option>)}</select>{period.type === 'days' ? <input type="text" className="select-control" value={period.key} onChange={(e) => setPeriod({ type: 'days', key: e.target.value })} placeholder="ex: 2026-09-10, 2026-09-12" title="Dias separados por virgula" /> : <select className="select-control" value={period.key} onChange={(e) => setPeriod({ type: period.type, key: e.target.value })} title="Periodo">{periodOptions(period.type).map((p) => <option key={p.key} value={p.key}>{periodLabel(p)}</option>)}</select>}<Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button></>}
+        actions={<><select className="select-control" value={period.type} onChange={(e) => { const t = e.target.value as PeriodType; setPeriod({ type: t, key: periodKey(t, new Date()) }) }} title="Tipo de periodo">{(['week','month','quarter','semester','year'] as PeriodType[]).map((t) => <option key={t} value={t}>{periodTypeLabel[t]}</option>)}</select><select className="select-control" value={period.key} onChange={(e) => setPeriod({ type: period.type, key: e.target.value })} title="Periodo">{periodOptions(period.type).map((p) => <option key={p.key} value={p.key}>{periodLabel(p)}</option>)}</select><Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button></>}
       />
 
       {error && (
