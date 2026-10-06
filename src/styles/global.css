@@ -89,3 +89,8 @@ input[type="text"],input[type="search"],input[type="date"],input[type="month"],i
 .menu-toolbar-card .toolbar-row .search-field{flex:1 1 180px;min-width:140px}
 .menu-toolbar-card .toolbar-row select{flex:0 0 auto;max-width:180px}
 .menu-toolbar-card .toolbar-row .month-field{flex:0 0 auto}
+
+/* v71: paginacao das vendas */
+.sales-pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #eef1ee;font-size:12px;color:#68746e}
+.sales-pagination-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sales-page-indicator{font-weight:700;color:#334039;white-space:nowrap}

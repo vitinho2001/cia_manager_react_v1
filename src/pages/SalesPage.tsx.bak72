@@ -644,7 +644,9 @@ Canal
                       <button type="button" className="icon-btn" title="Editar associacao" onClick={() => void openEdit(s)}>
                         <Pencil size={16} />
                       </button>
-                      <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 10, fontSize: 12, fontWeight: 700, background: '#d92d20', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => void removeSale(s.id)}><Trash2 size={15} /> Excluir</button>
+                      <button type="button" className="btn btn-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 10, fontSize: 12, fontWeight: 700 }} onClick={() => void removeSale(s.id)}><Trash2 size={15} /> Excluir</button>
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -653,14 +655,14 @@ Canal
           </table>
         </div>
         <div className="sales-pagination">
-        {Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000) > 31 && <div style={{ marginBottom: 10, fontSize: 12, color: '#8b5a14', background: '#fff4df', border: '1px solid #f0dcae', borderRadius: 10, padding: '8px 12px' }}>Intervalo longo: os dados sao exibidos em paginas de {pageSize} linhas. Use "Proxima" para ver os dias finais.</div>}
+        {longRange && <div style={{ marginBottom: 10, fontSize: 12, color: '#8b5a14', background: '#fff4df', border: '1px solid #f0dcae', borderRadius: 10, padding: '8px 12px' }}>Intervalo longo: os dados sao exibidos em paginas de ${pageSize} linhas. Use "Proxima" para ver os dias finais.</div>}
         <span>${totalCount > 0 ? 'Mostrando ' + ((page - 1) * pageSize + 1) + ' a ' + Math.min(page * pageSize, totalCount) + ' de ' + totalCount + ' vendas' : 'Sem vendas no periodo'}</span>
         <div className="sales-pagination-buttons">
           <Button variant="secondary" onClick={() => setPage(1)} disabled={page <= 1}>Primeira</Button>
           <Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page <= 1}>Anterior</Button>
-          <span className="sales-page-indicator">Pagina ${page} de ${Math.max(1, Math.ceil(totalCount / pageSize))}</span>
-          <Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Proxima</Button>
-          <Button variant="secondary" onClick={() => setPage(Math.max(1, Math.ceil(totalCount / pageSize)))} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Ultima</Button>
+          <span className="sales-page-indicator">Pagina ${page} de ${totalPages}</span>
+          <Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>Proxima</Button>
+          <Button variant="secondary" onClick={() => setPage(totalPages)} disabled={page >= totalPages}>Ultima</Button>
         </div>
       </div>
       

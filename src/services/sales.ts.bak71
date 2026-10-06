@@ -1,12 +1,11 @@
 import { supabase } from './supabase'
 import type { CreateSaleInput, Sale } from '../types/sales'
 
-export async function listSales(organizationId: string, from?: string, to?: string, page?: number, pageSize?: number) {
+export async function listSales(organizationId: string, from?: string, to?: string) {
 if (!supabase) throw new Error('Supabase nao configurado.')
 let q = supabase.from('sales').select('*, menu_item:menu_items(name)').eq('organization_id', organizationId).order('sale_date', { ascending: false })
 if (from) q = q.gte('sale_date', from)
 if (to) q = q.lte('sale_date', to)
-  if (typeof page === 'number' && page > 0 && pageSize && pageSize > 0) q = q.range((page - 1) * pageSize, page * pageSize - 1)
 const { data, error } = await q
 if (error) throw error
 return (data ?? []).map((row: Record<string, unknown>) => ({
@@ -62,15 +61,4 @@ if (patch.total_amount !== undefined) update.total_amount = patch.total_amount
 const { data, error } = await supabase.from('sales').update(update).eq('id', id).select().single()
 if (error) throw error
 return data as Sale
-}
-
-
-export async function countSales(organizationId: string, from?: string, to?: string) {
-  if (!supabase) throw new Error('Supabase nao configurado.')
-  let q = supabase.from('sales').select('id', { count: 'exact', head: true }).eq('organization_id', organizationId)
-  if (from) q = q.gte('sale_date', from)
-  if (to) q = q.lte('sale_date', to)
-  const { count, error } = await q
-  if (error) throw error
-  return count ?? 0
 }

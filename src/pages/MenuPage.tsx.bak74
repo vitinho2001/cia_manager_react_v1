@@ -10,6 +10,9 @@ import { listIngredients, listPurchases } from '../services/ingredients'
 import { listSales } from '../services/sales'
 import { computeStock } from '../services/stock'
 import type { Sale } from '../types/sales'
+import { listSales } from '../services/sales'
+import { computeStock } from '../services/stock'
+import type { Sale } from '../types/sales'
 import { listRecipeItems, listRecipes } from '../services/recipes'
 import { createMenuItem, deleteMenuItem, listMenuComponents, listMenuItems, seedMenuItems, updateMenuItem, updateMenuItemCategory } from '../services/menu'
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
@@ -104,6 +107,7 @@ export function MenuPage() {
   const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
+  const [sales, setSales] = useState<Sale[]>([])
   const [sales, setSales] = useState<Sale[]>([])
   const [month, setMonth] = useState(currentMonth)
   const [search, setSearch] = useState('')
