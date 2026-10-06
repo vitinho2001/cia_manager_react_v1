@@ -7,9 +7,6 @@ import { listBusinessSettings, updateBusinessSettings } from '../services/settin
 import type { BusinessSettings } from '../types/settings'
 import { getCurrentOrganizationId } from '../services/organization'
 import { listIngredients, listPurchases } from '../services/ingredients'
-import { listSales } from '../services/sales'
-import { computeStock } from '../services/stock'
-import type { Sale } from '../types/sales'
 import { listRecipeItems, listRecipes } from '../services/recipes'
 import { createMenuItem, deleteMenuItem, listMenuComponents, listMenuItems, seedMenuItems, updateMenuItem, updateMenuItemCategory } from '../services/menu'
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
@@ -60,30 +57,16 @@ function convertQuantity(quantity: number, from: string, to: string): number | n
   if (from in volume && to in volume) return quantity * volume[from] / volume[to]
   return null
 }
-function fifoStockCost(ingredient: Ingredient, purchases: IngredientPurchase[], consumedQty: number, adjustmentsQty: number): number | null {
-  const lots = purchases
-    .map((p) => {
-      const converted = convertQuantity(p.quantity, p.purchase_unit, ingredient.purchase_unit)
-      if (converted == null || converted <= 0) return null
-      return { qty: converted, unitCost: p.total_amount / converted, date: p.purchase_date }
-    })
-    .filter((x): x is { qty: number; unitCost: number; date: string } => x != null)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  if (lots.length === 0) return null
-  const totalQty = lots.reduce((sum, lot) => sum + lot.qty, 0)
-  const remainingQty = totalQty - consumedQty + adjustmentsQty
-  if (remainingQty <= 0) return lots[lots.length - 1].unitCost
-  let toKeep = remainingQty
-  const kept: { qty: number; unitCost: number }[] = []
-  for (let i = lots.length - 1; i >= 0 && toKeep > 0; i--) {
-    const take = Math.min(lots[i].qty, toKeep)
-    kept.push({ qty: take, unitCost: lots[i].unitCost })
-    toKeep -= take
-  }
+function averagePurchaseCost(ingredient: Ingredient, purchases: IngredientPurchase[]) {
   let amount = 0
-  let qty = 0
-  for (const lot of kept) { amount += lot.qty * lot.unitCost; qty += lot.qty }
-  return qty > 0 ? amount / qty : null
+  let quantity = 0
+  for (const purchase of purchases) {
+    const converted = convertQuantity(purchase.quantity, purchase.purchase_unit, ingredient.purchase_unit)
+    if (converted == null) continue
+    amount += purchase.total_amount
+    quantity += converted
+  }
+  return quantity > 0 ? amount / quantity : null
 }
 function recipeItemCost(item: RecipeItem, ingredient: Ingredient, average: number | null) {
   if (average == null) return null
@@ -104,7 +87,6 @@ export function MenuPage() {
   const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
-  const [sales, setSales] = useState<Sale[]>([])
   const [month, setMonth] = useState(currentMonth)
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('Todas')
@@ -133,10 +115,10 @@ const [notice, setNotice] = useState<string | null>(null)
       const orgId = organizationId ?? await getCurrentOrganizationId()
       setOrganizationId(orgId)
       const bounds = monthBounds(targetMonth)
-      const [menuData, componentData, recipeData, recipeItemData, ingredientData, purchaseData, saleData] = await Promise.all([
-        listMenuItems(orgId), listMenuComponents(orgId), listRecipes(orgId), listRecipeItems(orgId), listIngredients(orgId), listPurchases(orgId, undefined, bounds.end), listSales(orgId, undefined, bounds.end),
+      const [menuData, componentData, recipeData, recipeItemData, ingredientData, purchaseData] = await Promise.all([
+        listMenuItems(orgId), listMenuComponents(orgId), listRecipes(orgId), listRecipeItems(orgId), listIngredients(orgId), listPurchases(orgId, bounds.start, bounds.end),
       ])
-      setItems(menuData); setComponents(componentData); setRecipes(recipeData); setRecipeItems(recipeItemData); setIngredients(ingredientData); setPurchases(purchaseData); setSales(saleData)
+      setItems(menuData); setComponents(componentData); setRecipes(recipeData); setRecipeItems(recipeItemData); setIngredients(ingredientData); setPurchases(purchaseData)
 const settingsData = await listBusinessSettings(orgId)
 setSettings(settingsData)
 setFeeCounter(pctInput(settingsData.counter_fee))
@@ -152,9 +134,7 @@ setFeeBysell(pctInput(settingsData.bysell_fee))
   const recipeMap = useMemo(() => new Map(recipes.map((item) => [item.id, item])), [recipes])
   const itemsByRecipe = useMemo(() => { const map = new Map<string, RecipeItem[]>(); for (const row of recipeItems) map.set(row.recipe_id, [...(map.get(row.recipe_id) ?? []), row]); return map }, [recipeItems])
   const purchasesByIngredient = useMemo(() => { const map = new Map<string, IngredientPurchase[]>(); for (const row of purchases) map.set(row.ingredient_id, [...(map.get(row.ingredient_id) ?? []), row]); return map }, [purchases])
-  const stockLines = useMemo(() => computeStock(ingredients, purchases, components, recipeItems, sales, [], recipes), [ingredients, purchases, components, recipeItems, sales, recipes])
-  const stockUsedById = useMemo(() => { const map = new Map<string, { consumed: number; adjusted: number }>(); for (const line of stockLines) map.set(line.ingredientId, { consumed: line.consumed, adjusted: line.adjusted }); return map }, [stockLines])
-  const averageByIngredient = useMemo(() => new Map(ingredients.map((ingredient) => { const used = stockUsedById.get(ingredient.id) ?? { consumed: 0, adjusted: 0 }; return [ingredient.id, fifoStockCost(ingredient, purchasesByIngredient.get(ingredient.id) ?? [], used.consumed, used.adjusted)] })), [ingredients, purchasesByIngredient, stockUsedById])
+  const averageByIngredient = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, averagePurchaseCost(ingredient, purchasesByIngredient.get(ingredient.id) ?? [])])), [ingredients, purchasesByIngredient])
   const recipeCostById = useMemo(() => {
     const map = new Map<string, { total: number; perYield: number; incomplete: number }>()
     for (const recipe of recipes) {
