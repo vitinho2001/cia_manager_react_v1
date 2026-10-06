@@ -4,11 +4,6 @@ import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { getCurrentOrganizationId } from '../services/organization'
 import { listIngredients, listPurchases } from '../services/ingredients'
-import { listSales } from '../services/sales'
-import { computeStock } from '../services/stock'
-import { listMenuComponents } from '../services/menu'
-import type { Sale } from '../types/sales'
-import type { MenuItemComponent } from '../types/menu'
 import { createRecipe, deleteRecipe, listRecipeItems, listRecipes, updateRecipe } from '../services/recipes'
 import type { Ingredient, IngredientPurchase } from '../types/ingredients'
 import type { Recipe, RecipeItem, RecipeItemInput } from '../types/recipes'
@@ -61,31 +56,6 @@ function convertQuantity(quantity: number, from: string, to: string): number | n
   return null
 }
 
-function fifoStockCost(ingredient: Ingredient, purchases: IngredientPurchase[], consumedQty: number, adjustmentsQty: number): number | null {
-  const lots = purchases
-    .map((p) => {
-      const converted = convertQuantity(p.quantity, p.purchase_unit, ingredient.purchase_unit)
-      if (converted == null || converted <= 0) return null
-      return { qty: converted, unitCost: p.total_amount / converted, date: p.purchase_date }
-    })
-    .filter((x): x is { qty: number; unitCost: number; date: string } => x != null)
-    .sort((a, b) => a.date.localeCompare(b.date))
-  if (lots.length === 0) return null
-  const totalQty = lots.reduce((sum, lot) => sum + lot.qty, 0)
-  const remainingQty = totalQty - consumedQty + adjustmentsQty
-  if (remainingQty <= 0) return lots[lots.length - 1].unitCost
-  let toKeep = remainingQty
-  const kept: { qty: number; unitCost: number }[] = []
-  for (let i = lots.length - 1; i >= 0 && toKeep > 0; i--) {
-    const take = Math.min(lots[i].qty, toKeep)
-    kept.push({ qty: take, unitCost: lots[i].unitCost })
-    toKeep -= take
-  }
-  let amount = 0
-  let qty = 0
-  for (const lot of kept) { amount += lot.qty * lot.unitCost; qty += lot.qty }
-  return qty > 0 ? amount / qty : null
-}
 function averagePurchaseCost(ingredient: Ingredient, purchases: IngredientPurchase[]) {
   let amount = 0
   let quantity = 0
@@ -139,8 +109,6 @@ export function RecipesPage() {
   const [recipeItems, setRecipeItems] = useState<RecipeItem[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
-  const [sales, setSales] = useState<Sale[]>([])
-  const [menuComponents, setMenuComponents] = useState<MenuItemComponent[]>([])
   const [month, setMonth] = useState(currentMonth)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -157,10 +125,10 @@ export function RecipesPage() {
       const orgId = organizationId ?? await getCurrentOrganizationId()
       setOrganizationId(orgId)
       const bounds = monthBounds(month)
-      const [recipeRows, itemRows, ingredientRows, purchaseRows, componentRows, saleRows] = await Promise.all([
-        listRecipes(orgId), listRecipeItems(orgId), listIngredients(orgId), listPurchases(orgId, undefined, bounds.end), listMenuComponents(orgId), listSales(orgId, undefined, bounds.end),
+      const [recipeRows, itemRows, ingredientRows, purchaseRows] = await Promise.all([
+        listRecipes(orgId), listRecipeItems(orgId), listIngredients(orgId), listPurchases(orgId, bounds.start, bounds.end),
       ])
-      setRecipes(recipeRows); setRecipeItems(itemRows); setIngredients(ingredientRows); setPurchases(purchaseRows); setMenuComponents(componentRows); setSales(saleRows)
+      setRecipes(recipeRows); setRecipeItems(itemRows); setIngredients(ingredientRows); setPurchases(purchaseRows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível carregar as receitas.')
     } finally { setLoading(false) }
@@ -174,9 +142,7 @@ export function RecipesPage() {
     purchases.forEach((purchase) => map.set(purchase.ingredient_id, [...(map.get(purchase.ingredient_id) ?? []), purchase]))
     return map
   }, [purchases])
-  const stockLines = useMemo(() => computeStock(ingredients, purchases, menuComponents, recipeItems, sales, [], recipes), [ingredients, purchases, menuComponents, recipeItems, sales, recipes])
-  const stockUsedById = useMemo(() => { const map = new Map<string, { consumed: number; adjusted: number }>(); for (const line of stockLines) map.set(line.ingredientId, { consumed: line.consumed, adjusted: line.adjusted }); return map }, [stockLines])
-  const averages = useMemo(() => new Map(ingredients.map((ingredient) => { const used = stockUsedById.get(ingredient.id) ?? { consumed: 0, adjusted: 0 }; return [ingredient.id, fifoStockCost(ingredient, purchasesMap.get(ingredient.id) ?? [], used.consumed, used.adjusted)] })), [ingredients, purchasesMap, stockUsedById])
+  const averages = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, averagePurchaseCost(ingredient, purchasesMap.get(ingredient.id) ?? [])])), [ingredients, purchasesMap])
   const itemsByRecipe = useMemo(() => {
     const map = new Map<string, RecipeItem[]>()
     recipeItems.forEach((item) => map.set(item.recipe_id, [...(map.get(item.recipe_id) ?? []), item]))
