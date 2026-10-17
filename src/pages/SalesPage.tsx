@@ -5,7 +5,7 @@ import { Button } from '../components/Button'
 import { PageHeader } from '../components/PageHeader'
 import { getCurrentOrganizationId } from '../services/organization'
 import { createMenuItem, listMenuItems } from '../services/menu'
-import { deleteSalesByDate, createSale, createSales, deleteSale, listSales, updateSale, countSales } from '../services/sales'
+import { deleteSalesByDate, createSale, createSales, deleteSale, listSales, updateSale, countSales, deleteSalesRange } from '../services/sales'
 import type { MenuItem } from '../types/menu'
 import type { Sale, SaleChannel } from '../types/sales'
 
@@ -330,12 +330,12 @@ XLSX.writeFile(wb, 'vendas-' + date + '.xlsx')
 
 async function deleteAllForDay() {
 if (!organizationId) return
-const ok = window.confirm('Excluir TODAS as vendas do dia ' + date + '? Esta acao nao pode ser desfeita.')
+const ok = (!!from && !!to) && window.confirm((from === to ? 'Excluir TODAS as vendas do dia ' + from + '?' : 'Excluir TODAS as vendas de ' + from + ' ate ' + to + '?') + ' Esta acao nao pode ser desfeita.')
 if (!ok) return
 setLoading(true)
 setError(null)
 try {
-await deleteSalesByDate(organizationId, date)
+await deleteSalesRange(organizationId, from, to)
 setResultMsg('Todas as vendas do dia ' + date + ' foram excluidas.')
 await load()
 } catch (err) {

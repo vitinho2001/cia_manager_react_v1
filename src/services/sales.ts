@@ -74,3 +74,10 @@ export async function countSales(organizationId: string, from?: string, to?: str
   if (error) throw error
   return count ?? 0
 }
+
+
+export async function deleteSalesRange(organizationId: string, fromDate: string, toDate: string) {
+if (!supabase) throw new Error('Supabase nao configurado.')
+const { error } = await supabase.from('sales').delete().eq('organization_id', organizationId).gte('sale_date', fromDate).lte('sale_date', toDate)
+if (error) throw error
+}
