@@ -41,8 +41,8 @@ const pct = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 
 export function DashboardPage() {
   const { configured } = useAuth()
   const [organizationId, setOrganizationId] = useState<string | null>(null)
-  const [from, setFrom] = useState(firstOfMonth())
-  const [to, setTo] = useState(today())
+  const [from, setFrom] = useState(() => localStorage.getItem('dash_from') || firstOfMonth())
+  const [to, setTo] = useState(() => localStorage.getItem('dash_to') || today())
   const [sales, setSales] = useState<Sale[]>([])
   const [allSales, setAllSales] = useState<Sale[]>([])
   const [purchases, setPurchases] = useState<IngredientPurchase[]>([])
@@ -108,7 +108,7 @@ export function DashboardPage() {
 
   return (
     <div className="page-container">
-      <PageHeader eyebrow="Visao geral" title="Bem vindo" description="Indicadores do periodo selecionado, calculados a partir das vendas, compras e estoque." actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => setTo(e.target.value)} /></label></>} />
+      <PageHeader eyebrow="Visao geral" title="Bem vindo" description="Indicadores do periodo selecionado, calculados a partir das vendas, compras e estoque." actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => { setFrom(e.target.value); localStorage.setItem('dash_from', e.target.value) }} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => { setTo(e.target.value); localStorage.setItem('dash_to', e.target.value) }} /></label></>} />
       <section className="stats-grid">
         <StatCard label="Faturamento" value={brl(revenue)} detail="Periodo selecionado" icon={<CircleDollarSign size={19}/>} trend={trendLabel} />
         <StatCard label="CMV estimado" value={pct(cmvPct)} detail="Insumos consumidos / vendas" icon={<TrendingUp size={19}/>} />

@@ -211,8 +211,8 @@ export function SalesPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [date, setDate] = useState(today())
   const [period, setPeriod] = useState<Period>(currentPeriod)
-  const [from, setFrom] = useState(today())
-  const [to, setTo] = useState(today())
+  const [from, setFrom] = useState(() => localStorage.getItem('sales_from') || today())
+  const [to, setTo] = useState(() => localStorage.getItem('sales_to') || today())
 const [channelFilter, setChannelFilter] = useState<string>('all')
   const [channel, setChannel] = useState<SaleChannel>('counter')
   const [importChannel, setImportChannel] = useState<SaleChannel>('counter')
@@ -220,6 +220,7 @@ const [channelFilter, setChannelFilter] = useState<string>('all')
   const [page, setPage] = useState(1)
   const [pageSize] = useState(200)
   const [totalCount, setTotalCount] = useState(0)
+  const [allSales, setAllSales] = useState<Sale[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const [manualItemId, setManualItemId] = useState('')
@@ -259,17 +260,19 @@ return sales.filter((s) => s.channel === channelFilter)
     setLoading(true)
     setError(null)
     try {
-      const [total, saleRows, menuRows] = await Promise.all([
+      const [total, saleRows, menuRows, fullRows] = await Promise.all([
         countSales(organizationId, from, to),
         listSales(organizationId, from, to, page, pageSize),
         listMenuItems(organizationId),
+        listSales(organizationId, from, to),
       ])
       let rows = saleRows
       if (period.type === 'days') {
         const dayList = period.key.split(',').map((x) => x.trim()).filter(Boolean)
-        if (dayList.length) rows = rows.filter((s) => dayList.includes(s.sale_date))
+        if (dayList.length) { rows = rows.filter((s) => dayList.includes(s.sale_date)); setAllSales(fullRows.filter((s) => dayList.includes(s.sale_date))) }
       }
       setTotalCount(total)
+      setAllSales(fullRows)
       setSales(rows)
       setMenuItems(menuRows)
     } catch (err) {
@@ -558,22 +561,22 @@ setEditTotal(String(sale.total_amount ?? 0))
     let quantity = 0
     const byChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
     const qtyByChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
-    sales.forEach((s) => {
+    allSales.forEach((s) => {
       const v = Number(s.total_amount) || 0
       total += v
       quantity += Number(s.quantity) || 0
       byChannel[s.channel] += v
       qtyByChannel[s.channel] += Number(s.quantity) || 0
     })
-    return { total, quantity, priced: sales.length, byChannel, qtyByChannel }
-  }, [sales])
+    return { total, quantity, priced: allSales.length, byChannel, qtyByChannel }
+  }, [allSales])
   return (
     <div className="page-container">
       <PageHeader
         
         title="Vendas"
         description="Vendas por produto, canal e periodo."
-        actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1) }} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => { setTo(e.target.value); setPage(1) }} /></label><Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button></>}
+        actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); localStorage.setItem('sales_from', e.target.value) }} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); localStorage.setItem('sales_to', e.target.value) }} /></label><Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button></>}
       />
 
       {error && (
