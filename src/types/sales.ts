@@ -19,6 +19,7 @@ export type Sale = {
   unit_price: number
   total_amount: number
   source: SaleSource
+  item_name?: string | null
   created_at: string
   updated_at: string
   menu_item?: {
@@ -34,4 +35,5 @@ export type CreateSaleInput = {
   quantity: number
   total_amount: number
   source: SaleSource
+  item_name?: string | null
 }

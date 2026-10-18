@@ -447,6 +447,7 @@ setLoading(false)
           channel: importChannel,
           quantity: r.quantity,
           total_amount: r.total,
+          item_name: r.product,
           source: 'import' as const,
         }))
 
@@ -636,7 +637,7 @@ Canal
                 <tr key={s.id}>
                   <td>{s.sale_date}</td>
                   <td>
-                    {s.menu_item?.name ?? <span className="badge badge-warn">Sem associacao</span>}
+                    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}><span>{s.menu_item?.name ?? <span className="badge badge-warn">Sem associacao</span>}</span>{s.item_name && s.item_name !== s.menu_item?.name ? <small style={{ fontSize: 11, color: '#8b8f8b' }}>CSV: {s.item_name}</small> : null}</span>
                   </td>
                   <td>{channelLabel(s.channel)}</td>
                   <td>{s.quantity}</td>
@@ -808,6 +809,7 @@ Canal
           <div className="modal-card modal-wide">
             <div className="modal-header">
               <h3>Editar associacao</h3>
+          {editingSale?.item_name ? <p style={{ margin: '4px 0 0', fontSize: 12, color: '#68746e' }}>Nome original (CSV): <strong>{editingSale.item_name}</strong></p> : null}
               <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>
             </div>
             <p>

@@ -1,0 +1,856 @@
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import * as XLSX from 'xlsx'
+import { FileUp, Pencil, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react'
+import { Button } from '../components/Button'
+import { PageHeader } from '../components/PageHeader'
+import { getCurrentOrganizationId } from '../services/organization'
+import { createMenuItem, listMenuItems } from '../services/menu'
+import { deleteSalesByDate, createSale, createSales, deleteSale, listSales, updateSale, countSales, deleteSalesRange } from '../services/sales'
+import type { MenuItem } from '../types/menu'
+import type { Sale, SaleChannel } from '../types/sales'
+
+const CHANNELS: { value: SaleChannel; label: string }[] = [
+  { value: 'counter', label: 'Balcao' },
+  { value: 'ifood', label: 'iFood' },
+  { value: 'bysell', label: 'BySell' },
+  { value: 'other', label: 'Outros' },
+]
+
+const channelLabel = (v: SaleChannel) => {
+  for (const c of CHANNELS) if (c.value === v) return c.label
+  return v
+}
+
+const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+
+const normalize = (v: string) => v.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+
+// remove o plural simples ("caldos" -> "caldo")
+const singular = (v: string) => (v.endsWith('s') && v.length > 3 ? v.slice(0, -1) : v)
+
+// distancia de edicao (Levenshtein): quantas letras precisam mudar
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[b.length]
+}
+
+// similaridade 0..1: 1 = identico. Tolerante a typos, acentos, plural e nome contido.
+function similar(name: string, item: string): number {
+  const a = singular(normalize(name))
+  const b = singular(normalize(item))
+  if (a === b) return 1
+  if (a.includes(b) || b.includes(a)) return 0.96
+  const d = levenshtein(a, b)
+  const max = Math.max(a.length, b.length)
+  if (!max) return 0
+  return Math.max(0, 1 - d / max)
+}
+
+function today() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return d.getFullYear() + '-' + m + '-' + day
+}
+
+type ParsedRow = { product: string; quantity: number; total: number }
+
+function toNumber(value: unknown): number {
+  if (value == null) return 0
+  if (typeof value === 'number') return isNaN(value) ? 0 : value
+  const raw = String(value).trim().replace(/\s/g, '').replace(/R\$/g, '')
+  if (!raw) return 0
+  const s = raw.indexOf(',') >= 0 ? raw.replace(/\./g, '').replace(',', '.') : raw
+  const n = parseFloat(s)
+  return isNaN(n) ? 0 : n
+}
+
+function parseCsv(text: string): ParsedRow[] {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+  if (!lines.length) return []
+  const sep = lines[0].indexOf(';') >= 0 ? ';' : ','
+  const rows: ParsedRow[] = []
+  lines.forEach((line, i) => {
+    const c = line.split(sep).map((x) => x.trim().replace(/^"|"$/g, ''))
+    if (i === 0 && /produto|item|nome|descricao/i.test(c[0] ?? '')) return
+    if (!c[0]) return
+    rows.push({ product: c[0], quantity: toNumber(c[1]) || 1, total: toNumber(c[2]) })
+  })
+  return rows
+}
+function parseWorkbook(buffer: ArrayBuffer): ParsedRow[] {
+  const wb = XLSX.read(buffer, { type: 'array' })
+  const rows: ParsedRow[] = []
+  wb.SheetNames.forEach((name) => {
+    const sheet = wb.Sheets[name]
+    if (!sheet) return
+    const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+    json.forEach((row) => {
+      const keys = Object.keys(row)
+      if (!keys.length) return
+      const pick = (cands: string[], idx: number) => {
+        for (const c of cands) {
+          const found = keys.filter((k) => normalize(k) === c)[0]
+          if (found) return row[found]
+        }
+        return keys[idx] ? row[keys[idx]] : ''
+      }
+      const product = String(pick(['produto', 'item', 'nome', 'descricao'], 0) ?? '').trim()
+      if (!product) return
+      rows.push({
+        product,
+        quantity: toNumber(pick(['quantidade', 'qtd', 'qtde'], 1)) || 1,
+        total: toNumber(pick(['total', 'valor', 'valor total', 'receita'], 2)),
+      })
+    })
+  })
+  return rows
+}
+
+function isBinaryWorkbook(buffer: ArrayBuffer) {
+  const b = new Uint8Array(buffer.slice(0, 8))
+  const zip = b[0] === 0x50 && b[1] === 0x4b
+  const xls = b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0xa1 && b[3] === 0xb1
+  return zip || xls
+}
+
+// cada produto do arquivo guarda sua associacao
+type LinkEntry = {
+  menuItemId: string
+  auto: boolean
+  score: number
+  create: boolean
+  newName: string
+}
+
+const AUTO_OK = 0.82
+const SUGGEST_OK = 0.6
+
+type PeriodType = 'week' | 'month' | 'quarter' | 'semester' | 'year' | 'days'
+type Period = { type: PeriodType; key: string }
+const periodTypeLabel: Record<PeriodType, string> = { week: 'Semana', month: 'Mes', quarter: 'Trimestre', semester: 'Semestre', year: 'Ano', days: 'Dias' }
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const iso = (d: Date) => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate())
+function startOfWeek(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const day = (x.getDay() + 6) % 7
+  x.setDate(x.getDate() - day)
+  return x
+}
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d)
+  x.setDate(x.getDate() + n)
+  return x
+}
+function periodBounds(p: Period): { start: string; end: string } {
+  if (p.type === 'days') {
+    const days = p.key.split(',').map((x) => x.trim()).filter(Boolean).sort()
+    return { start: days[0] || '', end: days[days.length - 1] || '' }
+  }
+  if (p.type === 'week') {
+    const monday = startOfWeek(new Date(p.key + 'T00:00:00'))
+    return { start: iso(monday), end: iso(addDays(monday, 6)) }
+  }
+  if (p.type === 'month') {
+    const [y, m] = p.key.split('-').map(Number)
+    return { start: p.key + '-01', end: p.key + '-' + pad2(new Date(y, m, 0).getDate()) }
+  }
+  if (p.type === 'quarter') {
+    const [y, q] = p.key.split('-').map(Number)
+    const sm = (q - 1) * 3
+    return { start: y + '-' + pad2(sm + 1) + '-01', end: y + '-' + pad2(sm + 3) + '-' + pad2(new Date(y, sm + 3, 0).getDate()) }
+  }
+  if (p.type === 'semester') {
+    const [y, s2] = p.key.split('-').map(Number)
+    const sm = (s2 - 1) * 6
+    return { start: y + '-' + pad2(sm + 1) + '-01', end: y + '-' + pad2(sm + 6) + '-' + pad2(new Date(y, sm + 6, 0).getDate()) }
+  }
+  const y = Number(p.key)
+  return { start: y + '-01-01', end: y + '-12-31' }
+}
+function periodKey(type: PeriodType, d: Date): string {
+  if (type === 'week') return iso(startOfWeek(d))
+  if (type === 'month') return d.getFullYear() + '-' + pad2(d.getMonth() + 1)
+  if (type === 'quarter') return d.getFullYear() + '-Q' + (Math.floor(d.getMonth() / 3) + 1)
+  if (type === 'semester') return d.getFullYear() + '-S' + (d.getMonth() < 6 ? 1 : 2)
+  if (type === 'days') return iso(d)
+  return String(d.getFullYear())
+}
+function periodLabel(p: Period): string {
+  if (p.type === 'week') return 'Semana de ' + new Date(Number(p.key.slice(0,4)), Number(p.key.slice(5,7))-1, Number(p.key.slice(8,10))).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  if (p.type === 'month') return new Date(Number(p.key.slice(0,4)), Number(p.key.slice(5,7))-1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+  if (p.type === 'quarter') { const [y, q] = p.key.split('-').map(Number); return y + ' · ' + (q === 1 ? '1o trim' : q === 2 ? '2o trim' : q === 3 ? '3o trim' : '4o trim') }
+  if (p.type === 'semester') { const [y, s2] = p.key.split('-').map(Number); return y + ' · ' + (s2 === 1 ? '1o sem' : '2o sem') }
+  if (p.type === 'days') return p.key || 'Selecione os dias'
+  return 'Ano de ' + p.key
+}
+function periodOptions(type: PeriodType): Period[] {
+  const out: Period[] = []
+  const now = new Date()
+  if (type === 'week') { for (let i = 0; i < 12; i++) { const d = addDays(startOfWeek(now), -7 * i); out.push({ type, key: periodKey(type, d) }) } }
+  else if (type === 'month') { for (let i = 0; i < 12; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ type, key: periodKey(type, d) }) } }
+  else if (type === 'quarter') { for (let i = 0; i < 8; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 3 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
+  else if (type === 'semester') { for (let i = 0; i < 6; i++) { const d = new Date(now.getFullYear(), now.getMonth() - 6 * i, 1); out.push({ type, key: periodKey(type, d) }) } }
+  else if (type === 'days') { out.push({ type, key: '' }) }
+  else { for (let i = 0; i < 5; i++) { out.push({ type, key: String(now.getFullYear() - i) }) } }
+  return out
+}
+const currentPeriod: Period = { type: 'month', key: periodKey('month', new Date()) }
+export function SalesPage() {
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [sales, setSales] = useState<Sale[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [date, setDate] = useState(today())
+  const [period, setPeriod] = useState<Period>(currentPeriod)
+  const [from, setFrom] = useState(() => localStorage.getItem('sales_from') || today())
+  const [to, setTo] = useState(() => localStorage.getItem('sales_to') || today())
+const [channelFilter, setChannelFilter] = useState<string>('all')
+  const [channel, setChannel] = useState<SaleChannel>('counter')
+  const [importChannel, setImportChannel] = useState<SaleChannel>('counter')
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(200)
+  const [totalCount, setTotalCount] = useState(0)
+  const [allSales, setAllSales] = useState<Sale[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  const [manualItemId, setManualItemId] = useState('')
+  const [manualQty, setManualQty] = useState('1')
+  const [manualTotal, setManualTotal] = useState('')
+
+  const [importRows, setImportRows] = useState<ParsedRow[]>([])
+  const [linkEntries, setLinkEntries] = useState<Record<string, LinkEntry>>({})
+  const [pendingProducts, setPendingProducts] = useState<string[]>([])
+  const [showModal, setShowModal] = useState(false)
+  const [modalQuery, setModalQuery] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
+  const [editItemId, setEditItemId] = useState('')
+  const [editQuery, setEditQuery] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editChannel, setEditChannel] = useState<SaleChannel>('counter')
+  const [editQty, setEditQty] = useState('1')
+  const [editTotal, setEditTotal] = useState('')
+  useEffect(() => {
+    if (editingSale) {
+      setEditChannel(editingSale.channel)
+      setEditQty(String(editingSale.quantity))
+      setEditTotal(String(editingSale.total_amount ?? 0))
+    }
+  }, [editingSale])
+const filteredSales = useMemo(() => {
+if (channelFilter === 'all') return sales
+return sales.filter((s) => s.channel === channelFilter)
+}, [sales, channelFilter])
+
+  const load = useCallback(async () => {
+    if (!organizationId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const [total, saleRows, menuRows, fullRows] = await Promise.all([
+        countSales(organizationId, from, to),
+        listSales(organizationId, from, to, page, pageSize),
+        listMenuItems(organizationId),
+        listSales(organizationId, from, to),
+      ])
+      let rows = saleRows
+      if (period.type === 'days') {
+        const dayList = period.key.split(',').map((x) => x.trim()).filter(Boolean)
+        if (dayList.length) { rows = rows.filter((s) => dayList.includes(s.sale_date)); setAllSales(fullRows.filter((s) => dayList.includes(s.sale_date))) }
+      }
+      setTotalCount(total)
+      setAllSales(fullRows)
+      setSales(rows)
+      setMenuItems(menuRows)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao carregar vendas.')
+    } finally {
+      setLoading(false)
+    }
+  }, [organizationId, from, to, page, pageSize, period])
+
+  useEffect(() => {
+    getCurrentOrganizationId()
+      .then(setOrganizationId)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Falha ao carregar organizacao.'))
+  }, [])
+
+  useEffect(() => { void load() }, [load])
+
+  // monta a associacao inicial de cada produto do arquivo
+   // monta a associacao inicial de cada produto do arquivo
+  function buildLinks(rows: ParsedRow[]) {
+    const entries: Record<string, LinkEntry> = {}
+    rows.forEach((r) => {
+      let bestId = ''
+      let bestScore = 0
+      menuItems.forEach((m) => {
+        const s = similar(r.product, m.name)
+        if (s > bestScore) {
+          bestScore = s
+          bestId = m.id
+        }
+      })
+      if (bestId && bestScore >= AUTO_OK) {
+        entries[r.product] = { menuItemId: bestId, auto: true, score: bestScore, create: false, newName: r.product }
+      } else if (bestId && bestScore >= SUGGEST_OK) {
+        entries[r.product] = { menuItemId: bestId, auto: false, score: bestScore, create: false, newName: r.product }
+      } else {
+        entries[r.product] = { menuItemId: '', auto: false, score: 0, create: false, newName: r.product }
+      }
+    })
+    return entries
+  }
+
+function exportXlsx() {
+const rows = filteredSales.map((s) => ({
+Data: s.sale_date,
+Item: s.menu_item?.name ?? '-',
+Canal: channelLabel(s.channel),
+Quantidade: Number(s.quantity) || 0,
+Total: Number(s.total_amount) || 0,
+Unitario: Number(s.total_amount) && Number(s.quantity) ? Number((Number(s.total_amount) / Number(s.quantity)).toFixed(2)) : 0,
+Origem: s.source === 'import' ? 'Importacao' : 'Manual',
+}))
+const ws = XLSX.utils.json_to_sheet(rows)
+const wb = XLSX.utils.book_new()
+XLSX.utils.book_append_sheet(wb, ws, 'Vendas')
+XLSX.writeFile(wb, 'vendas-' + date + '.xlsx')
+}
+
+async function deleteAllForDay() {
+if (!organizationId) return
+const ok = (!!from && !!to) && window.confirm((from === to ? 'Excluir TODAS as vendas do dia ' + from + '?' : 'Excluir TODAS as vendas de ' + from + ' ate ' + to + '?') + ' Esta acao nao pode ser desfeita.')
+if (!ok) return
+setLoading(true)
+setError(null)
+try {
+await deleteSalesRange(organizationId, from, to)
+setResultMsg('Todas as vendas do dia ' + date + ' foram excluidas.')
+await load()
+} catch (err) {
+setError(err instanceof Error ? err.message : 'Falha ao excluir vendas.')
+} finally {
+setLoading(false)
+}
+}
+
+  function handleFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const buffer = reader.result as ArrayBuffer
+      let rows: ParsedRow[] = []
+      try {
+        rows = isBinaryWorkbook(buffer) ? parseWorkbook(buffer) : parseCsv(new TextDecoder('utf-8').decode(buffer))
+      } catch {
+        setError('Nao foi possivel ler o arquivo. Salve como .xlsx ou .csv e tente novamente.')
+        return
+      }
+      if (!rows.length) {
+        setError('Nenhuma linha valida encontrada. O arquivo precisa ter as colunas produto, quantidade e total.')
+        return
+      }
+      const entries = buildLinks(rows)
+      setFileName(file.name)
+      setImportRows(rows)
+      setLinkEntries(entries)
+      setPendingProducts(rows.filter((r) => !entries[r.product].menuItemId).map((r) => r.product))
+      setModalQuery('')
+      setResultMsg(null)
+      setError(null)
+      setShowModal(true)
+    }
+    reader.onerror = () => setError('Falha ao abrir o arquivo.')
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  function cancelImport() {
+    setImportRows([])
+    setPendingProducts([])
+    setLinkEntries({})
+    setResultMsg(null)
+    setError(null)
+    setFileName('')
+    setShowModal(false)
+  }
+
+  function setEntry(product: string, patch: Partial<LinkEntry>) {
+    setLinkEntries((prev) => ({ ...prev, [product]: { ...prev[product], ...patch } }))
+  }
+  async function confirmImport() {
+    if (!organizationId) return
+    setImporting(true)
+    setError(null)
+    try {
+      // 1) cria os itens marcados como "novo item"
+      const toCreate = Array.from(new Set(
+        Object.entries(linkEntries)
+          .filter(([, e]) => e.create)
+          .map(([product, e]) => (e.newName ?? product).trim() || product)
+      ))
+      if (toCreate.length > 0) {
+        const existing = await listMenuItems(organizationId)
+        const known = new Set(existing.map((m) => normalize(m.name)))
+        for (const name of toCreate) {
+          if (known.has(normalize(name))) continue
+          try {
+            await createMenuItem({
+              organizationId,
+              name,
+              category: 'Outros',
+              counterPrice: null,
+              ifoodPrice: null,
+              bysellPrice: null,
+              components: [],
+            })
+            known.add(normalize(name))
+          } catch (err) {
+            console.warn('Item nao criado:', name, err)
+          }
+        }
+      }
+
+      // 2) resolve o id final de cada produto (recém-criado ou já escolhido)
+      const fresh = await listMenuItems(organizationId)
+      const freshLookup = new Map<string, string>()
+      fresh.forEach((m) => freshLookup.set(normalize(m.name), m.id))
+
+      const resolve = (product: string) => {
+        const e = linkEntries[product]
+        if (!e) return ''
+        if (e.create) return freshLookup.get(normalize((e.newName ?? product).trim() || product)) ?? ''
+        return e.menuItemId
+      }
+
+      const inputs = importRows
+        .map((r) => ({ r, id: resolve(r.product) }))
+        .filter((x) => x.id)
+        .map(({ r, id }) => ({
+          sale_date: date, organization_id: organizationId,
+          menu_item_id: id,
+          channel: importChannel,
+          quantity: r.quantity,
+          total_amount: r.total,
+          source: 'import' as const,
+        }))
+
+      if (inputs.length > 0) await createSales(inputs)
+
+      const skipped = importRows.length - inputs.length
+      setResultMsg(
+        skipped > 0
+          ? inputs.length + ' venda(s) importada(s). ' + skipped + ' linha(s) ficaram sem associacao e foram ignoradas.'
+          : inputs.length + ' venda(s) importada(s) com sucesso.'
+      )
+      setImportRows([])
+      setPendingProducts([])
+      setLinkEntries({})
+      setShowModal(false)
+      setFileName('')
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao importar vendas.')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function submitManual(e: FormEvent) {
+    e.preventDefault()
+    if (!organizationId || !manualItemId) return
+    try {
+      await createSale({
+        sale_date: date, organization_id: organizationId,
+        menu_item_id: manualItemId,
+        channel: (channelFilter === 'all' ? 'counter' : channelFilter) as SaleChannel,
+        quantity: Number(manualQty) || 1,
+        total_amount: Number(manualTotal) || 0,
+        source: 'manual',
+      })
+      setManualItemId('')
+      setManualQty('1')
+      setManualTotal('')
+      setResultMsg('Venda lancada.')
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao lancar venda.')
+    }
+  }
+
+  async function removeSale(id: string) {
+    if (!window.confirm('Excluir esta venda?')) return
+    try {
+      await deleteSale(id)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao excluir venda.')
+    }
+  }
+  // itens do cardapio filtrados pela busca do modal
+  const filteredMenu = useMemo(() => {
+    const q = normalize(modalQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, modalQuery])
+
+  const filteredEditMenu = useMemo(() => {
+    const q = normalize(editQuery)
+    if (!q) return menuItems
+    return menuItems.filter((m) => normalize(m.name).includes(q))
+  }, [menuItems, editQuery])
+
+  // abre o modal de edicao de uma venda ja importada
+  function openEdit(sale: Sale) {
+    setEditingSale(sale)
+    setEditItemId(sale.menu_item_id)
+    setEditQuery('')
+setEditChannel(sale.channel)
+setEditQty(String(sale.quantity ?? 1))
+setEditTotal(String(sale.total_amount ?? 0))
+
+setEditQty(String(sale.quantity ?? 1))
+setEditTotal(String(sale.total_amount ?? 0))
+
+  }
+
+  async function saveEdit() {
+    if (!editingSale || !editItemId) return
+    setEditSaving(true)
+    setError(null)
+    try {
+      await updateSale(editingSale.id, { menu_item_id: editItemId, channel: editChannel, quantity: parseFloat(editQty) || 1, total_amount: parseFloat(editTotal) || 0 })
+      setResultMsg('Associacao atualizada.')
+      setEditingSale(null)
+      await load()
+    } catch (err) {
+      const detail = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message?: unknown }).message)
+        : err instanceof Error ? err.message : String(err)
+      setError(detail || 'Falha ao atualizar associacao.')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  const boxBase = { borderRadius: 12, padding: '14px 16px', flex: '1 1 150px' }
+
+  const totals = useMemo(() => {
+    let total = 0
+    let quantity = 0
+    const byChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    const qtyByChannel: Record<SaleChannel, number> = { counter: 0, ifood: 0, bysell: 0, other: 0 }
+    allSales.forEach((s) => {
+      const v = Number(s.total_amount) || 0
+      total += v
+      quantity += Number(s.quantity) || 0
+      byChannel[s.channel] += v
+      qtyByChannel[s.channel] += Number(s.quantity) || 0
+    })
+    return { total, quantity, priced: allSales.length, byChannel, qtyByChannel }
+  }, [allSales])
+  return (
+    <div className="page-container">
+      <PageHeader
+        
+        title="Vendas"
+        description="Vendas por produto, canal e periodo."
+        actions={<><label className="range-label">De<input type="date" className="select-control" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); localStorage.setItem('sales_from', e.target.value) }} /></label><label className="range-label">Ate<input type="date" className="select-control" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); localStorage.setItem('sales_to', e.target.value) }} /></label><Button icon={<RefreshCw size={16} />} onClick={() => void load()} disabled={loading}>Atualizar</Button></>}
+      />
+
+      {error && (
+        <div className="notice notice-error">
+          {error}
+          <button type="button" onClick={() => setError(null)}><X size={16} /></button>
+        </div>
+      )}
+      {resultMsg && (
+        <div className="notice">
+          {resultMsg}
+          <button type="button" onClick={() => setResultMsg(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      <section className="panel">
+        <h2>Resumo do periodo</h2>
+        <div className="sales-summary-grid">
+          <div className="sales-summary-item"><strong>{brl(totals.total)}</strong><span>Total</span></div>
+          <div className="sales-summary-item"><strong>{totals.quantity}</strong><span>Itens vendidos</span></div>
+          <div className="sales-summary-item"><strong>{totals.priced}</strong><span>Vendas</span></div>
+          {CHANNELS.map((c) => (<div className="sales-summary-item" key={c.value}><strong>{brl(totals.byChannel[c.value])}</strong><span>{c.label}</span></div>))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          
+<label>
+Canal
+<select className="select-control" value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}>
+<option value="all">Todos</option>
+{CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+</select>
+</label>
+<Button onClick={() => void exportXlsx()}>Exportar XLSX</Button>
+<Button onClick={() => void deleteAllForDay()} disabled={loading}>Excluir tudo</Button>
+
+          <div className="search-box table-search"><Search size={16} /><input placeholder="Buscar em vendas" /></div>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Data</th><th>Item</th><th>Canal</th><th>Qtd</th><th>Total</th><th>Origem</th><th></th></tr>
+            </thead>
+            <tbody>
+              {filteredSales.length === 0 ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state">
+                      <h2>Nenhuma venda neste dia</h2>
+                      <p>Lance manualmente abaixo ou importe um arquivo.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredSales.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.sale_date}</td>
+                  <td>
+                    {s.menu_item?.name ?? <span className="badge badge-warn">Sem associacao</span>}
+                  </td>
+                  <td>{channelLabel(s.channel)}</td>
+                  <td>{s.quantity}</td>
+                  <td>{brl(Number(s.total_amount) || 0)}<small style={{ display: 'block', fontSize: 11, color: '#6b7280' }}>{brl((Number(s.total_amount) || 0) / (Number(s.quantity) || 1))} /un</small></td>
+                  <td>{s.source === 'import' ? 'Importacao' : 'Manual'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" className="icon-btn" title="Editar associacao" onClick={() => void openEdit(s)}>
+                        <Pencil size={16} />
+                      </button>
+                      <button type="button" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 12px', borderRadius: 10, fontSize: 12, fontWeight: 700, background: '#d92d20', color: '#fff', border: 'none', cursor: 'pointer' }} onClick={() => void removeSale(s.id)}><Trash2 size={15} /> Excluir</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="sales-pagination">
+        {Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000) > 31 && <div style={{ marginBottom: 10, fontSize: 12, color: '#8b5a14', background: '#fff4df', border: '1px solid #f0dcae', borderRadius: 10, padding: '8px 12px' }}>Intervalo longo: os dados sao exibidos em paginas de {pageSize} linhas. Use "Proxima" para ver os dias finais.</div>}
+        <span>${totalCount > 0 ? 'Mostrando ' + ((page - 1) * pageSize + 1) + ' a ' + Math.min(page * pageSize, totalCount) + ' de ' + totalCount + ' vendas' : 'Sem vendas no periodo'}</span>
+        <div className="sales-pagination-buttons">
+          <Button variant="secondary" onClick={() => setPage(1)} disabled={page <= 1}>Primeira</Button>
+          <Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page <= 1}>Anterior</Button>
+          <span className="sales-page-indicator">Pagina ${page} de ${Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+          <Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Proxima</Button>
+          <Button variant="secondary" onClick={() => setPage(Math.max(1, Math.ceil(totalCount / pageSize)))} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Ultima</Button>
+        </div>
+      </div>
+      
+      </section>
+      <section className="panel">
+        <h2>Lancar venda</h2>
+        <form onSubmit={(e) => void submitManual(e)} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label>Dia<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+          <label>
+            Item
+            <select className="select-control" value={manualItemId} onChange={(e) => setManualItemId(e.target.value)} required>
+              <option value="">Selecione um item</option>
+              {menuItems.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </label>
+          <label>
+            Canal
+            <select className="select-control" value={channel} onChange={(e) => setChannel(e.target.value as SaleChannel)}>
+              {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Qtd
+            <input type="number" min="1" step="any" value={manualQty} onChange={(e) => setManualQty(e.target.value)} required />
+          </label>
+          <label>
+            Total (R$)
+            <input type="number" min="0" step="any" value={manualTotal} onChange={(e) => setManualTotal(e.target.value)} required />
+          </label>
+          <Button icon={<Plus size={16} />}>Lancar venda</Button>
+        </form>
+      </section>
+
+      <section className="panel">
+        <h2>Importar vendas</h2>
+        <p>O arquivo deve ter as colunas: <strong>produto, quantidade, total</strong> (.xlsx ou .csv). Selecione o dia e o canal antes de importar.</p>
+        <label style={{ display: 'block', marginBottom: 8 }}>Dia<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Canal da importacao
+          <select className="select-control" value={importChannel} onChange={(e) => setImportChannel(e.target.value as SaleChannel)}>
+            {CHANNELS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </label>
+        <label className="file-input">
+          <FileUp size={16} />
+          <input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFile} />
+        </label>
+        {importRows.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12, flexWrap: 'wrap' }}>
+            <p><strong>{importRows.length}</strong> linha(s) de <strong>{fileName}</strong>.</p>
+            <Button onClick={() => void confirmImport()} disabled={importing}>
+              {importing ? 'Importando...' : 'Importar ' + importRows.length + ' venda(s)'}
+            </Button>
+            <Button onClick={cancelImport} disabled={importing}>Cancelar importacao</Button>
+          </div>
+        )}
+      </section>
+      {/* Modal de vinculacao dos produtos importados */}
+      {showModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card modal-wide">
+            <div className="modal-header">
+              <h3>Vincular itens ao cardapio</h3>
+              <button type="button" className="icon-btn" onClick={cancelImport}><X size={16} /></button>
+            </div>
+            <p>
+              Associe cada produto do arquivo a um item do cardapio. Correspondencias automaticas ja foram
+              marcadas. Itens sem associacao ficam destacados e podem ser ignorados.
+            </p>
+
+            {pendingProducts.length > 0 && (
+              <div className="notice notice-warn">
+                {pendingProducts.length} produto(s) sem correspondencia automatica. Revise abaixo.
+              </div>
+            )}
+
+            <div className="modal-body">
+              {importRows.map((r) => {
+                const entry = linkEntries[r.product]
+                const isPending = !entry || !entry.menuItemId
+                return (
+                  <div key={r.product} className="modal-row">
+                    <div className="modal-row-info">
+                      <strong>{r.product}</strong>
+                      <span>{r.quantity} x {brl(r.total)}</span>
+                      {entry?.auto && <span className="badge badge-ok">Automatico</span>}
+                      {entry && !entry.auto && entry.menuItemId && <span className="badge badge-info">Sugestao</span>}
+                      {isPending && <span className="badge badge-warn">Sem associacao</span>}
+                    </div>
+
+                    <div className="modal-row-controls">
+                      <input
+                        type="text"
+                        placeholder="Buscar item do cardapio..."
+                        value={modalQuery}
+                        onChange={(e) => setModalQuery(e.target.value)}
+                      />
+                      <select
+                        className="select-control"
+                        value={entry?.create ? '__create__' : (entry?.menuItemId ?? '')}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          if (v === '__create__') {
+                            setEntry(r.product, { create: true, menuItemId: '', auto: false, score: 0 })
+                          } else {
+                            setEntry(r.product, { create: false, menuItemId: v, auto: false, score: 0 })
+                          }
+                        }}
+                      >
+                        <option value="">Deixar sem associacao</option>
+                        {filteredMenu.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                        <option value="__create__">Criar novo item no cardapio</option>
+                      </select>
+                      {entry?.create && (
+                        <input
+                          type="text"
+                          placeholder="Nome do novo item"
+                          value={entry.newName}
+                          onChange={(e) => setEntry(r.product, { newName: e.target.value })}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="modal-footer">
+              <Button onClick={cancelImport} disabled={importing}>Cancelar</Button>
+              <Button onClick={() => void confirmImport()} disabled={importing}>
+                {importing ? 'Importando...' : 'Confirmar importacao'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal de edicao da associacao (pos-importacao) */}
+      {editingSale && (
+        <div className="modal-backdrop">
+          <div className="modal-card modal-wide">
+            <div className="modal-header">
+              <h3>Editar associacao</h3>
+              <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>
+            </div>
+            <p>
+              Venda de <strong>{editingSale.sale_date}</strong> — {editingSale.quantity} x {brl(Number(editingSale.total_amount) || 0)}.
+              Escolha o item do cardapio correspondente. Esta edicao vale tambem para vendas ja importadas.
+            </p>
+            <input
+              type="text"
+              placeholder="Buscar item do cardapio..."
+              value={editQuery}
+              onChange={(e) => setEditQuery(e.target.value)}
+            />
+            <label>Item do cardapio
+              <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
+                <option value="">Sem associacao</option>
+                {filteredEditMenu.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>Canal
+              <select className="select-control" value={editChannel} onChange={(e) => setEditChannel(e.target.value as SaleChannel)}>
+                <option value="counter">Balcao</option>
+                <option value="ifood">iFood</option>
+                <option value="bysell">BySell</option>
+                <option value="other">Outro</option>
+              </select>
+            </label>
+            <label>Quantidade
+              <input type="number" min="0" step="any" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
+            </label>
+            <label>Total (R$)
+              <input type="number" min="0" step="any" value={editTotal} onChange={(e) => setEditTotal(e.target.value)} />
+            </label>
+            <div className="modal-footer">
+              <Button onClick={() => setEditingSale(null)} disabled={editSaving}>Cancelar</Button>
+              <Button onClick={() => void saveEdit()} disabled={editSaving || !editItemId}>
+                {editSaving ? 'Salvando...' : 'Salvar associacao'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
