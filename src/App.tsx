@@ -10,6 +10,7 @@ import { RecipesPage } from './pages/RecipesPage'
 import { MenuPage } from './pages/MenuPage'
 import { EstoquePage } from './pages/EstoquePage'
 import { SalesPage } from './pages/SalesPage'
+import { CostsPage } from './pages/CostsPage'
 
 function RoutedApp() {
   const { user, loading, configured } = useAuth()
@@ -23,7 +24,7 @@ function RoutedApp() {
         <Route path="receitas" element={<RecipesPage />} />
         <Route path="insumos" element={<IngredientsPage />} />
 <Route path="estoque" element={<EstoquePage />} />
-        <Route path="custos" element={<PlaceholderPage title="Custos" description="Custos fixos, variáveis e importação de planilhas." />} />
+        <Route path="custos" element={<CostsPage />} />
         <Route path="vendas" element={<SalesPage />} />
         <Route path="dre" element={<PlaceholderPage title="DRE" description="Demonstrativo calculado automaticamente." />} />
         <Route path="comparativo" element={<PlaceholderPage title="Comparativo" description="Análises mensais, trimestrais, semestrais e anuais." />} />
