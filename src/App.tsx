@@ -11,6 +11,7 @@ import { MenuPage } from './pages/MenuPage'
 import { EstoquePage } from './pages/EstoquePage'
 import { SalesPage } from './pages/SalesPage'
 import { CostsPage } from './pages/CostsPage'
+import { DrePage } from './pages/DrePage'
 
 function RoutedApp() {
   const { user, loading, configured } = useAuth()
@@ -26,7 +27,7 @@ function RoutedApp() {
 <Route path="estoque" element={<EstoquePage />} />
         <Route path="custos" element={<CostsPage />} />
         <Route path="vendas" element={<SalesPage />} />
-        <Route path="dre" element={<PlaceholderPage title="DRE" description="Demonstrativo calculado automaticamente." />} />
+        <Route path="dre" element={<DrePage />} />
         <Route path="comparativo" element={<PlaceholderPage title="Comparativo" description="Análises mensais, trimestrais, semestrais e anuais." />} />
         <Route path="inteligencia" element={<PlaceholderPage title="Inteligência" description="Alertas, rankings e simulações." />} />
         <Route path="sistema-atual" element={<LegacyPage />} />
