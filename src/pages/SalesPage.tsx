@@ -525,14 +525,11 @@ setLoading(false)
   // abre o modal de edicao de uma venda ja importada
   function openEdit(sale: Sale) {
     setEditingSale(sale)
-    setEditItemId(sale.menu_item_id)
+    setEditItemId(sale.menu_item_id ?? '')
     setEditQuery('')
-setEditChannel(sale.channel)
-setEditQty(String(sale.quantity ?? 1))
-setEditTotal(String(sale.total_amount ?? 0))
-
-setEditQty(String(sale.quantity ?? 1))
-setEditTotal(String(sale.total_amount ?? 0))
+    setEditChannel(sale.channel)
+    setEditQty(String(sale.quantity ?? 1))
+    setEditTotal(String(sale.total_amount ?? 0))
 
   }
 
@@ -658,11 +655,11 @@ Canal
         </div>
         <div className="sales-pagination">
         {Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000) > 31 && <div style={{ marginBottom: 10, fontSize: 12, color: '#8b5a14', background: '#fff4df', border: '1px solid #f0dcae', borderRadius: 10, padding: '8px 12px' }}>Intervalo longo: os dados sao exibidos em paginas de {pageSize} linhas. Use "Proxima" para ver os dias finais.</div>}
-        <span>${totalCount > 0 ? 'Mostrando ' + ((page - 1) * pageSize + 1) + ' a ' + Math.min(page * pageSize, totalCount) + ' de ' + totalCount + ' vendas' : 'Sem vendas no periodo'}</span>
+        <span>{totalCount > 0 ? 'Mostrando ' + ((page - 1) * pageSize + 1) + ' a ' + Math.min(page * pageSize, totalCount) + ' de ' + totalCount + ' vendas' : 'Sem vendas no periodo'}</span>
         <div className="sales-pagination-buttons">
           <Button variant="secondary" onClick={() => setPage(1)} disabled={page <= 1}>Primeira</Button>
           <Button variant="secondary" onClick={() => setPage(page - 1)} disabled={page <= 1}>Anterior</Button>
-          <span className="sales-page-indicator">Pagina ${page} de ${Math.max(1, Math.ceil(totalCount / pageSize))}</span>
+          <span className="sales-page-indicator">Pagina {page} de {Math.max(1, Math.ceil(totalCount / pageSize))}</span>
           <Button variant="secondary" onClick={() => setPage(page + 1)} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Proxima</Button>
           <Button variant="secondary" onClick={() => setPage(Math.max(1, Math.ceil(totalCount / pageSize)))} disabled={page >= Math.max(1, Math.ceil(totalCount / pageSize))}>Ultima</Button>
         </div>
@@ -813,7 +810,7 @@ Canal
               <button type="button" className="icon-btn" onClick={() => setEditingSale(null)}><X size={16} /></button>
             </div>
             <p style={{ margin: 0, fontSize: 13, color: '#4b5563' }}>
-              Venda de <strong>${editingSale.sale_date}</strong> — ${editingSale.quantity} x ${brl(Number(editingSale.total_amount) || 0)}.
+              Venda de <strong>{editingSale.sale_date}</strong> — {editingSale.quantity} x {brl(Number(editingSale.total_amount) || 0)}.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 600 }}>
@@ -830,7 +827,12 @@ Canal
                 Item do cardapio
                 <select className="select-control" value={editItemId} onChange={(e) => setEditItemId(e.target.value)}>
                   <option value="">Sem associacao</option>
-                  ${filteredEditMenu.map((m) => (
+                  {editItemId && !filteredEditMenu.some((m) => m.id === editItemId) && (
+                    <option value={editItemId}>
+                      {menuItems.find((m) => m.id === editItemId)?.name ?? '(item atual)'}
+                    </option>
+                  )}
+                  {filteredEditMenu.map((m) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>

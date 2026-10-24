@@ -1,0 +1,8 @@
+const fs = require('fs')
+const lines = fs.readFileSync('src/pages/SalesPage.tsx', 'utf8').split(/\r?\n/)
+console.log('===== linhas 810-870 (modal) =====')
+for (let i = 809; i < Math.min(870, lines.length); i++) console.log((i + 1) + ': ' + lines[i])
+console.log('\n===== openEdit =====')
+lines.forEach((l, i) => { if (/function openEdit/.test(l)) { for (let j = i; j < Math.min(i + 14, lines.length); j++) console.log((j + 1) + ': ' + lines[j]) } })
+console.log('\n===== saveEdit =====')
+lines.forEach((l, i) => { if (/async function saveEdit/.test(l)) { for (let j = i; j < Math.min(i + 20, lines.length); j++) console.log((j + 1) + ': ' + lines[j]) } })
