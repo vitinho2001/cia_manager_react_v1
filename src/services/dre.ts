@@ -89,3 +89,104 @@ export async function loadDreContext(organizationId: string, from: string, to: s
   ])
   return { sales, costs, lines: computeStock(ingRows, purRows, compRows, recItemRows, sales, adjRows, recRows) }
 }
+
+
+export type ItemMargin = {
+  menuItemId: string
+  name: string
+  qtySold: number
+  revenue: number
+  unitPrice: number
+  unitCost: number
+  totalCost: number
+  marginValue: number
+  marginPct: number
+  hasCost: boolean
+}
+
+type CompRow = {
+  menu_item_id: string
+  component_type: 'recipe' | 'ingredient'
+  recipe_id: string | null
+  ingredient_id: string | null
+  quantity: number
+}
+
+type RecipeRow = { id: string; yield_quantity: number }
+type RecipeItemRow = { recipe_id: string; ingredient_id: string; quantity: number }
+
+/**
+ * Custo unitario de cada item do cardapio.
+ * Composicao real: MenuItemComponent -> receita (com yield) ou insumo direto.
+ * Custo do insumo: custo medio FIFO vindo de StockLine.
+ */
+export function computeMenuItemCosts(
+  components: CompRow[],
+  recipes: RecipeRow[],
+  recipeItems: RecipeItemRow[],
+  lines: StockLine[],
+): Map<string, number> {
+  const costByIngredient = new Map<string, number>()
+  for (const l of lines) if (l.avgCost > 0) costByIngredient.set(l.ingredientId, l.avgCost)
+
+  const yieldByRecipe = new Map<string, number>()
+  for (const r of recipes) yieldByRecipe.set(r.id, Number(r.yield_quantity) || 1)
+
+  // soma dos insumos de cada receita
+  const sumByRecipe = new Map<string, number>()
+  for (const ri of recipeItems) {
+    const unitCost = costByIngredient.get(ri.ingredient_id) ?? 0
+    sumByRecipe.set(ri.recipe_id, (sumByRecipe.get(ri.recipe_id) ?? 0) + unitCost * (Number(ri.quantity) || 0))
+  }
+
+  // custo por unidade de receita = soma / rendimento
+  const costPerRecipeUnit = new Map<string, number>()
+  for (const [recipeId, total] of sumByRecipe) {
+    const yieldQty = yieldByRecipe.get(recipeId) ?? 1
+    costPerRecipeUnit.set(recipeId, yieldQty > 0 ? total / yieldQty : total)
+  }
+
+  const costByMenuItem = new Map<string, number>()
+  for (const c of components) {
+    const qty = Number(c.quantity) || 0
+    let unit = 0
+    if (c.component_type === 'recipe' && c.recipe_id) unit = costPerRecipeUnit.get(c.recipe_id) ?? 0
+    else if (c.component_type === 'ingredient' && c.ingredient_id) unit = costByIngredient.get(c.ingredient_id) ?? 0
+    if (unit <= 0) continue
+    costByMenuItem.set(c.menu_item_id, (costByMenuItem.get(c.menu_item_id) ?? 0) + unit * qty)
+  }
+  return costByMenuItem
+}
+
+export function computeItemMargins(
+  sales: Sale[],
+  costByMenuItem: Map<string, number>,
+): ItemMargin[] {
+  const map = new Map<string, ItemMargin>()
+  for (const s of sales) {
+    const id = s.menu_item_id || 'sem-associacao'
+    const name = (s.menu_item && s.menu_item.name) || s.item_name || 'Sem associacao'
+    const qty = Number(s.quantity) || 0
+    const revenue = Number(s.total_amount) || 0
+    const cur = map.get(id)
+    if (cur) { cur.qtySold += qty; cur.revenue += revenue }
+    else {
+      map.set(id, {
+        menuItemId: id, name, qtySold: qty, revenue,
+        unitPrice: 0, unitCost: 0, totalCost: 0, marginValue: 0, marginPct: 0,
+        hasCost: costByMenuItem.has(id),
+      })
+    }
+  }
+  return [...map.values()].map((r) => {
+    const unitCost = costByMenuItem.get(r.menuItemId) ?? 0
+    const totalCost = unitCost * r.qtySold
+    const marginValue = r.revenue - totalCost
+    return {
+      ...r,
+      unitPrice: r.qtySold > 0 ? r.revenue / r.qtySold : 0,
+      unitCost, totalCost, marginValue,
+      marginPct: r.revenue > 0 ? (marginValue / r.revenue) * 100 : 0,
+    }
+  }).sort((a, b) => b.marginValue - a.marginValue)
+}

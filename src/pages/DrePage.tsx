@@ -5,7 +5,9 @@ import { CircleDollarSign, Percent, Target, TrendingDown, Wallet } from 'lucide-
 import { PageHeader } from '../components/PageHeader'
 import { StatCard } from '../components/StatCard'
 import { getCurrentOrganizationId } from '../services/organization'
-import { CHANNEL_LABELS, computeDre, loadDreContext } from '../services/dre'
+import { listMenuComponents } from '../services/menu'
+import { CHANNEL_LABELS, computeDre, computeItemMargins, computeMenuItemCosts, loadDreContext } from '../services/dre'
+import { listRecipes, listRecipeItems } from '../services/recipes'
 import type { DreContext, DreData } from '../services/dre'
 
 const brl = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -59,6 +61,11 @@ export function DrePage() {
   const [to, setTo] = useState(() => localStorage.getItem('dre_to') || today())
   const [windowSize, setWindowSize] = useState(() => Number(localStorage.getItem('dre_window')) || 6)
   const [context, setContext] = useState<DreContext | null>(null)
+  const [recipeRefs, setRecipeRefs] = useState<{
+    components: { menu_item_id: string; component_type: 'recipe' | 'ingredient'; recipe_id: string | null; ingredient_id: string | null; quantity: number }[]
+    recipes: { id: string; yield_quantity: number }[]
+    items: { recipe_id: string; ingredient_id: string; quantity: number }[]
+  }>({ components: [], recipes: [], items: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -68,6 +75,16 @@ export function DrePage() {
     try {
       const organizationId = await getCurrentOrganizationId()
       const ctx = await loadDreContext(organizationId, from, to)
+      const [recRows, recItemRows, compRows] = await Promise.all([
+        listMenuComponents(organizationId).catch(() => []),
+        listRecipes(organizationId).catch(() => []),
+        listRecipeItems(organizationId).catch(() => []),
+      ])
+      setRecipeRefs({
+        components: compRows as { menu_item_id: string; component_type: 'recipe' | 'ingredient'; recipe_id: string | null; ingredient_id: string | null; quantity: number }[],
+        recipes: recRows as { id: string; yield_quantity: number }[],
+        items: recItemRows as { recipe_id: string; ingredient_id: string; quantity: number }[],
+      })
       setContext(ctx)
     } catch (e) { setError(e instanceof Error ? e.message : 'Falha ao carregar o DRE.') }
     finally { setLoading(false) }
@@ -87,6 +104,11 @@ export function DrePage() {
     })
   }, [context, windowSize])
 
+  const itemMargins = useMemo(() => {
+    if (!context) return []
+    const unitCosts = computeMenuItemCosts(recipeRefs.components, recipeRefs.recipes, recipeRefs.items, context.lines)
+    return computeItemMargins(context.sales, unitCosts)
+  }, [context, recipeRefs])
   const breakeven = useMemo(() => {
     if (!dre || dre.revenue <= 0) return null
     const marginPct = dre.margin / dre.revenue
@@ -261,6 +283,49 @@ export function DrePage() {
           </table>
         </div>
         <p style={{ margin: '10px 0 0', fontSize: 12, color: '#6b7280' }}>As variacoes percentuais comparam cada mes com o mes imediatamente anterior da tabela.</p>
+      </section>
+      <section className="panel">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <h2>Margem por item</h2>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>{itemMargins.length} item(ns) vendido(s) no período</span>
+        </div>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: '#4b5563' }}>Custo unitário calculado pela receita e pelo custo médio dos insumos (FIFO). Itens sem receita cadastrada aparecem com custo zero — a margem deles está superestimada.</p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th style={{ textAlign: 'right' }}>Qtd</th>
+                <th style={{ textAlign: 'right' }}>Preço médio</th>
+                <th style={{ textAlign: 'right' }}>Custo un.</th>
+                <th style={{ textAlign: 'right' }}>Margem un.</th>
+                <th style={{ textAlign: 'right' }}>Margem total</th>
+                <th style={{ textAlign: 'right' }}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itemMargins.map((m) => (
+                <tr key={m.menuItemId}>
+                  <td>
+                    <span style={{ fontWeight: 600 }}>{m.name}</span>
+                    {!m.hasCost && <small style={{ display: 'block', fontSize: 11, color: '#b54708' }}>sem receita cadastrada</small>}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>{m.qtySold.toLocaleString('pt-BR')}</td>
+                  <td style={{ textAlign: 'right' }}>{brl(m.unitPrice)}</td>
+                  <td style={{ textAlign: 'right' }}>{m.hasCost ? brl(m.unitCost) : '—'}</td>
+                  <td style={{ textAlign: 'right', color: m.marginValue >= 0 ? '#067647' : '#b42318', fontWeight: 600 }}>
+                    {m.hasCost ? brl(m.unitPrice - m.unitCost) : '—'}
+                  </td>
+                  <td style={{ textAlign: 'right', color: m.marginValue >= 0 ? '#067647' : '#b42318', fontWeight: 700 }}>{brl(m.marginValue)}</td>
+                  <td style={{ textAlign: 'right', fontSize: 12, color: '#6b7280' }}>{m.hasCost ? pctFmt(m.marginPct) : '—'}</td>
+                </tr>
+              ))}
+              {itemMargins.length === 0 && (
+                <tr><td colSpan={7}><div className="empty-state"><h2>Nenhuma venda no período</h2><p>A margem por item aparece após o lançamento ou importação de vendas.</p></div></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )
